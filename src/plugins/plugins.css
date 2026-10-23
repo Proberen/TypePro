@@ -1,0 +1,18 @@
+.plugin-manager { font-size: 14px; }
+.plugin-manager-top, .plugin-item-heading, .plugin-item-actions { display: flex; align-items: center; gap: 12px; }
+.plugin-manager-top { justify-content: space-between; margin-bottom: 18px; color: #777; }
+.plugin-manager button { border: 1px solid #ddd; background: #fff; color: #292929; border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.plugin-manager button:hover { background: #f6f6f5; }
+.plugin-manager button:disabled { opacity: .5; cursor: default; }
+.plugin-item { padding: 18px 0; border-top: 1px solid #eaeae8; }
+.plugin-item-heading strong { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.plugin-item-heading span { font-size: 12px; color: #888; flex-shrink: 0; }
+.plugin-item > p { color: #666; margin: 8px 0 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.plugin-permissions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.plugin-permissions span { font-size: 12px; color: #666; padding: 4px 7px; border-radius: 4px; background: #f5f5f3; }
+.plugin-item-actions > span { color: #999; font-size: 12px; margin-right: auto; }
+.plugin-item-actions > .plugin-enabled { color: #547664; }
+.plugin-confirm { margin-top: 12px; padding: 12px; border: 1px solid #deded9; border-radius: 6px; }
+.plugin-confirm p { margin: 0 0 12px; line-height: 1.6; }
+.plugin-confirm button + button { margin-left: 8px; }
+.plugin-error { color: #a23b35; line-height: 1.6; overflow-wrap: anywhere; }

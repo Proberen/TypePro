@@ -1,0 +1,37 @@
+[package]
+name = "local-notebook"
+version = "1.0.0"
+description = "Private local Markdown notebook"
+authors = ["Local Notebook"]
+edition = "2021"
+
+[lib]
+name = "local_notebook_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.22"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+regex = "1"
+mime_guess = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

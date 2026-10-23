@@ -1,0 +1,16 @@
+{
+  "manifest": {
+    "id": "notebook.date-and-count",
+    "name": "日期与字数",
+    "version": "1.0.0",
+    "apiVersion": 1,
+    "description": "插入日期，查看当前文档字数。",
+    "permissions": [
+      "commands",
+      "editor.insert",
+      "notes.read",
+      "panels"
+    ]
+  },
+  "code": "await notebook.commands.register('insert-date', '插入日期', async () => {\n  const now = new Date();\n  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;\n  await notebook.editor.insert(date);\n});\n\nasync function updateCount() {\n  const document = await notebook.notes.active();\n  if (!document) {\n    await notebook.panels.set('word-count', '字数', '未打开文档');\n    return;\n  }\n  const characters = [...document.markdown.replace(/\\s/g, '')].length;\n  const lines = document.markdown ? document.markdown.split('\\n').length : 0;\n  await notebook.panels.set('word-count', '字数', `${characters} 字符 · ${lines} 行\\n按 Markdown 原文统计，不含空白。`);\n}\n\nawait notebook.events.onDocumentChange(updateCount);\nawait updateCount();\n"
+}
