@@ -6,9 +6,9 @@ use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 type Result<T> = std::result::Result<T, String>;
 const CATALOG_URL: &str =
-    "https://raw.githubusercontent.com/Proberen/typepro-plugins/main/catalog-v2.json";
+    "https://raw.githubusercontent.com/Proberen/typepro-plugins/main/catalog-v3.json";
 const MAX_CATALOG: usize = 1024 * 1024;
-const MAX_PACKAGE: usize = 2 * 1024 * 1024;
+const MAX_PACKAGE: usize = 8 * 1024 * 1024;
 const MAX_PLUGINS: usize = 500;
 const MAX_REDIRECTS: usize = 3;
 const PERMISSIONS: &[&str] = &[
@@ -20,6 +20,12 @@ const PERMISSIONS: &[&str] = &[
     "storage",
     "home.activity",
     "assistant",
+    "editor.read",
+    "ui",
+    "network",
+    "secrets",
+    "files.pick",
+    "files.export",
 ];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -44,6 +50,8 @@ pub struct CatalogPlugin {
     pub description: Option<String>,
     pub api_version: u8,
     pub permissions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub network_origins: Vec<String>,
     pub download_url: String,
     pub sha256: String,
     pub size: usize,
@@ -208,8 +216,10 @@ fn parse_catalog(bytes: &[u8]) -> Result<Catalog> {
             || plugin.name.encode_utf16().count() > 60
             || plugin.version.len() > 40
             || !version.is_match(&plugin.version)
-            || !matches!(plugin.api_version, 1 | 2)
-            || (plugin.api_version == 1 && plugin.permissions.iter().any(|p| matches!(p.as_str(), "storage" | "home.activity" | "assistant")))
+            || !matches!(plugin.api_version, 1 | 2 | 3)
+            || (plugin.api_version == 1 && plugin.permissions.iter().any(|p| !matches!(p.as_str(), "notes.read" | "notes.write" | "editor.insert" | "commands" | "panels")))
+            || (plugin.api_version == 2 && plugin.permissions.iter().any(|p| matches!(p.as_str(), "editor.read" | "ui" | "network" | "secrets" | "files.pick" | "files.export")))
+            || (plugin.api_version == 3 && plugin.permissions.iter().any(|p| matches!(p.as_str(), "home.activity" | "assistant")))
             || plugin
                 .description
                 .as_ref()
@@ -224,6 +234,20 @@ fn parse_catalog(bytes: &[u8]) -> Result<Catalog> {
         {
             return Err("插件市场含有无效的插件信息，请稍后刷新".into());
         }
+        if plugin.network_origins.len() > 32 || (!plugin.network_origins.is_empty()
+            && (plugin.api_version != 3 || !plugin.permissions.iter().any(|p| p == "network"))) {
+            return Err("插件网络权限无效".into());
+        }
+        let mut origins = BTreeSet::new();
+        for value in &plugin.network_origins {
+            let url = Url::parse(value).map_err(|_| "插件网络来源无效")?;
+            let origin = url.origin().ascii_serialization();
+            if value.contains('*') || url.scheme() != "https" || url.host_str().is_none() || !url.username().is_empty()
+                || url.password().is_some() || url.query().is_some() || url.fragment().is_some()
+                || url.path() != "/" || (value != &origin && value != &format!("{origin}/"))
+                || !origins.insert(origin) { return Err("插件网络来源无效".into()); }
+        }
+        plugin.network_origins = origins.into_iter().collect();
         release_url(&plugin.download_url)?;
         plugin.name = plugin.name.trim().to_owned();
         let mut permissions = BTreeSet::new();
@@ -390,7 +414,7 @@ mod tests {
             ("version", json!("01.0.0")),
             ("version", json!("1.0.0-rc.01")),
             ("version", json!("1.0.0-a..b")),
-            ("apiVersion", json!(3)),
+            ("apiVersion", json!(4)),
             ("permissions", json!(["network"])),
             ("size", json!(MAX_PACKAGE + 1)),
             ("size", json!(0)),

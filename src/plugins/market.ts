@@ -1,5 +1,5 @@
 import type { InstalledPlugin } from '../lib/types';
-import { parsePluginPackage, validatePlugin } from './packages.ts';
+import { PACKAGE_LIMITS, parsePluginPackage, validatePlugin } from './packages.ts';
 
 export type MarketPlugin = InstalledPlugin['manifest'] & {
   downloadUrl: string;
@@ -53,10 +53,11 @@ export function parseMarketCatalog(input: unknown): MarketCatalog {
   const plugins = value.plugins.map((item: unknown) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('插件信息不完整');
     const entry = item as Record<string, unknown>;
-    const manifest = validatePlugin({ manifest: entry, code: 'metadata' }).manifest;
+    const { downloadUrl: _url, sha256: _hash, size: _size, ...metadata } = entry;
+    const manifest = validatePlugin({ manifest: metadata, code: 'metadata' }).manifest;
     if (manifest.name !== entry.name || !versionParts(manifest.version) || ids.has(manifest.id)) throw new Error('插件目录包含重复或无效版本');
     ids.add(manifest.id);
-    if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(entry.sha256) || typeof entry.size !== 'number' || !Number.isSafeInteger(entry.size) || entry.size < 1 || entry.size > 2 * 1024 * 1024) throw new Error('插件安装包信息不完整');
+    if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(entry.sha256) || typeof entry.size !== 'number' || !Number.isSafeInteger(entry.size) || entry.size < 1 || entry.size > PACKAGE_LIMITS.bytes) throw new Error('插件安装包信息不完整');
     if (typeof entry.downloadUrl !== 'string') throw new Error('插件下载地址无效');
     const url = new URL(entry.downloadUrl);
     if (url.origin !== 'https://github.com' || url.username || url.password || url.search || url.hash || !/^\/Proberen\/typepro-plugins\/releases\/download\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\.zip$/.test(url.pathname)) throw new Error('插件下载地址无效');
@@ -65,8 +66,11 @@ export function parseMarketCatalog(input: unknown): MarketCatalog {
   return { schemaVersion: 1, updatedAt: value.updatedAt, plugins };
 }
 
-export function addedPermissions(previous: InstalledPlugin | undefined, next: Pick<MarketPlugin, 'permissions'>): string[] {
-  return next.permissions.filter(permission => !previous?.manifest.permissions.includes(permission));
+export function addedPermissions(previous: InstalledPlugin | undefined, next: Pick<MarketPlugin, 'permissions' | 'networkOrigins'>): string[] {
+  return [
+    ...next.permissions.filter(permission => !previous?.manifest.permissions.includes(permission)),
+    ...(next.networkOrigins ?? []).filter(origin => !previous?.manifest.networkOrigins?.includes(origin)).map(origin => `network:${origin}`),
+  ];
 }
 
 // The native downloader verifies the pinned SHA-256 before returning bytes.
@@ -75,7 +79,7 @@ export function prepareMarketInstall(entry: MarketPlugin, bytes: Uint8Array, pre
   const plugin = parsePluginPackage(`${entry.id}.zip`, bytes);
   const actual = plugin.manifest;
   const samePermissions = [...actual.permissions].sort().join('\n') === [...entry.permissions].sort().join('\n');
-  if (actual.id !== entry.id || actual.version !== entry.version || actual.name !== entry.name || actual.apiVersion !== entry.apiVersion || (actual.description || '') !== (entry.description || '') || !samePermissions) throw new Error('安装包与插件目录不一致，请刷新后重试');
+  if (actual.id !== entry.id || actual.version !== entry.version || actual.name !== entry.name || actual.apiVersion !== entry.apiVersion || JSON.stringify(actual.networkOrigins ?? []) !== JSON.stringify(entry.networkOrigins ?? []) || (actual.description || '') !== (entry.description || '') || !samePermissions) throw new Error('安装包与插件目录不一致，请刷新后重试');
   if (previous && (previous.manifest.id !== entry.id || compareVersions(entry.version, previous.manifest.version) !== 1)) throw new Error('插件版本已变化，请刷新后重试');
   return { ...plugin, market: { sha256: entry.sha256, size: entry.size, downloadUrl: entry.downloadUrl }, enabled: !!previous?.enabled && addedPermissions(previous, entry).length === 0 };
 }

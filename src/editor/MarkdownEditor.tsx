@@ -24,6 +24,7 @@ export interface EditorHandle {
   insertText(text: string): void;
   focus(): void;
   getValue(): string;
+  getSelection(): string;
   executeCommand(id: string): void;
   getHeadings(): EditorHeading[];
   scrollToHeading(id: string): void;
@@ -95,7 +96,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       const template = document.createElement('template');
       template.innerHTML = editorRef.current!.vditor.lute.Md2HTML(markdown);
       template.content.querySelectorAll('script,style').forEach(node => node.remove());
-      const text = (template.content.textContent || '').replace(/[\s\u200b\ufeff]/gu, '');
+      const text = (template.content.textContent || '').replace(/[\u200b\ufeff]/gu, '');
       plainCache.current = { source: markdown, text };
       return text;
     };
@@ -329,7 +330,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       const fence = '`'.repeat(longest + 1); insertText(`${fence}mermaid\n${source}\n${fence}\n`);
     }
   }
-  const apiRef = useRef<EditorHandle>({ insertText, focus: restoreSelection, getValue: () => propsRef.current.mode === 'edit' ? collect() : buffer.current.value, executeCommand, getHeadings, scrollToHeading });
+  const apiRef = useRef<EditorHandle>({ insertText, focus: restoreSelection, getValue: () => propsRef.current.mode === 'edit' ? collect() : buffer.current.value, getSelection: () => savedSelection.current?.range.toString() || '', executeCommand, getHeadings, scrollToHeading });
 
   async function addImages(files: File[]) {
     setLinkDialog(null);

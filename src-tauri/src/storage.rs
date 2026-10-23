@@ -44,6 +44,8 @@ pub struct PluginManifest {
     pub description: Option<String>,
     pub api_version: u8,
     pub permissions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub network_origins: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -58,6 +60,8 @@ pub struct PluginMarket {
 pub struct Plugin {
     pub manifest: PluginManifest,
     pub code: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub files: BTreeMap<String, String>,
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub market: Option<PluginMarket>,
@@ -84,6 +88,8 @@ pub struct PluginInstallation {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,7 +268,7 @@ fn validate_plugin_manifest(manifest: &PluginManifest) -> Result<()> {
         || !Regex::new(r"^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$")
             .unwrap()
             .is_match(&manifest.version)
-        || ![1, 2].contains(&manifest.api_version)
+        || ![1, 2, 3].contains(&manifest.api_version)
         || manifest
             .description
             .as_ref()
@@ -271,6 +277,22 @@ fn validate_plugin_manifest(manifest: &PluginManifest) -> Result<()> {
     {
         return Err("同步插件清单无效".into());
     }
+    if manifest.network_origins.len() > 32 || (!manifest.network_origins.is_empty()
+        && (manifest.api_version != 3 || !manifest.permissions.iter().any(|p| p == "network"))) {
+        return Err("同步插件网络来源无效".into());
+    }
+    let mut origins = BTreeSet::new();
+    for value in &manifest.network_origins {
+        let url = reqwest::Url::parse(value).map_err(|_| "插件网络来源无效")?;
+        let origin = url.origin().ascii_serialization();
+        if value.contains('*') || url.scheme() != "https" || url.host_str().is_none() || !url.username().is_empty()
+            || url.password().is_some() || url.query().is_some() || url.fragment().is_some()
+            || url.path() != "/" || (value != &origin && value != &format!("{origin}/"))
+            || !origins.insert(origin) {
+            return Err("插件网络来源必须为唯一 HTTPS 来源".into());
+        }
+    }
+    if serde_json::to_vec(manifest).map_err(err)?.len() > 16 * 1024 { return Err("插件清单超过 16 KiB".into()); }
     let mut permissions = BTreeSet::new();
     for permission in &manifest.permissions {
         if permission.is_empty()
@@ -284,6 +306,23 @@ fn validate_plugin_manifest(manifest: &PluginManifest) -> Result<()> {
             return Err("同步插件权限无效".into());
         }
     }
+    Ok(())
+}
+fn validate_plugin_files(files: &BTreeMap<String, String>, api_version: u8, code: &str, manifest: &PluginManifest) -> Result<()> {
+    if files.len() > 126 || (!files.is_empty() && api_version != 3) {
+        return Err("插件资源需要 API 3 且最多 126 个文件".into());
+    }
+    let path_pattern = Regex::new(r"^[A-Za-z0-9][A-Za-z0-9._/-]*\.(?:js|css|json|txt|md|svg)$").unwrap();
+    let mut total = code.len() + serde_json::to_vec(manifest).map_err(err)?.len();
+    for (path, value) in files {
+        if path.len() > 200 || !path_pattern.is_match(path)
+            || path.split('/').any(|part| part.is_empty() || matches!(part, "." | ".." | "__proto__" | "prototype" | "constructor"))
+            || value.len() > 4 * 1024 * 1024 {
+            return Err("插件资源路径或大小无效".into());
+        }
+        total = total.saturating_add(value.len());
+    }
+    if total > 8 * 1024 * 1024 { return Err("插件内容超过 8 MiB".into()); }
     Ok(())
 }
 pub(crate) fn validate_extensions(state: &ExtensionState) -> Result<()> {
@@ -325,6 +364,7 @@ pub(crate) fn validate_extensions(state: &ExtensionState) -> Result<()> {
         match install.source.as_str() {
             "local" => {
                 let code = install.code.as_deref().ok_or("本地插件缺少代码")?;
+                if let Some(files) = &install.files { validate_plugin_files(files, install.manifest.api_version, code, &install.manifest)?; }
                 if code.len() > 512 * 1024
                     || (install.deleted != Some(true) && code.trim().is_empty())
                     || install.sha256.is_some()
@@ -349,11 +389,12 @@ pub(crate) fn validate_extensions(state: &ExtensionState) -> Result<()> {
                     .ok_or("插件下载地址不受支持")?;
                 let parts: Vec<_> = path.split('/').collect();
                 if install.code.is_some()
+                    || install.files.is_some()
                     || hash.len() != 64
                     || !hash
                         .bytes()
                         .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-                    || !install.size.is_some_and(|s| s > 0 && s <= 2 * 1024 * 1024)
+                    || !install.size.is_some_and(|s| s > 0 && s <= 8 * 1024 * 1024)
                     || url.as_str().len() > 2048
                     || url.scheme() != "https"
                     || url.host_str() != Some("github.com")
@@ -438,8 +479,10 @@ pub(crate) fn validate(workspace: &Workspace) -> Result<()> {
         return Err("插件数量过多".into());
     }
     for plugin in &workspace.plugins {
-        if ![1, 2].contains(&plugin.manifest.api_version)
-            || plugin.code.len() > 2 * 1024 * 1024
+        validate_plugin_manifest(&plugin.manifest)?;
+        validate_plugin_files(&plugin.files, plugin.manifest.api_version, &plugin.code, &plugin.manifest)?;
+        if ![1, 2, 3].contains(&plugin.manifest.api_version)
+            || plugin.code.len() > 512 * 1024
             || plugin.manifest.id.len() > 128
             || plugin.manifest.id.is_empty()
             || !plugin_ids.insert(&plugin.manifest.id)
@@ -1497,8 +1540,10 @@ mod tests {
                 description: None,
                 api_version: 1,
                 permissions: vec![],
+                network_origins: vec![],
             },
             code: "private-plugin-code".into(),
+            files: BTreeMap::new(),
             enabled: true,
             market: None,
         });

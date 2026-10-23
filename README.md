@@ -1,8 +1,12 @@
-# TypePro 1.5.0
+# TypePro 1.6.0
 
 本地 Markdown 笔记软件。Apple Silicon Mac 与 Android 共用编辑器和插件 API，使用系统 WebView，不捆绑 Chromium。
 
-1.5.0 新增每日打卡、AI 助手及插件安装与数据同步。DMG／APK 已生成，两个新插件已完成公开市场发布；实际发布、测试和安装包检查记录见 [构建记录](docs/BUILD.md)。
+1.6.0 是一次 API 3 通用宿主升级：打卡和 AI 的完整逻辑、界面迁入独立插件，App 只提供通用接口与挂载位置。此后，已有接口范围内的插件业务和界面可以独立发布，无需升级 App；新增宿主能力或不兼容接口仍需升级 App。规范见 [PLUGIN-SPEC.md](docs/PLUGIN-SPEC.md)。
+
+1.6.0 DMG／APK 已生成并通过签名、包结构与完整性检查；每日打卡 1.1.0 已发布并校验；AI 助手 1.1.1，仅修复独立插件的样式加载顺序，已通过 [Publish plugins #8](https://github.com/Proberen/typepro-plugins/actions/runs/39761719863) 发布，新包已由原生模块真实下载并通过大小／SHA-256 及包结构校验。App 1.6.0 安装包保持不变。首次 [自动发布 #7](https://github.com/Proberen/typepro-plugins/actions/runs/39759657722) 的三个市场包已完成原生真实下载校验，旧版目录条目保持不变。类型检查、Rust 41 项、独立插件 17 项、分发 35 项、SDK 8 项及独立 WKWebView CSP 9 项检查通过，范围见 [本次审查记录](docs/PLUGIN-REFACTOR-REVIEW.md) 与 [构建记录](docs/BUILD.md)。本轮未验收打包 App UI、真实模型服务和两台设备联网同步。
+
+插件普通业务数据及安装资源继续同步，API Key 每台设备单独配置。API 2 专用插件需更新，原数据保留。
 
 ## 使用
 
@@ -48,15 +52,15 @@ workspace/
 
 Mac 新建笔记或「存储目录」中可为每本笔记选择独立的空文件夹，支持迁移与回到默认目录。每个目录含 `notebooks/<id>/<doc>.md` 和 `assets/`，保留 Markdown 的相对图片引用。迁移不删除旧文件；绝对路径仅记在本机 `locations.json`，不会写入 ZIP。手机版不提供自定义目录。
 
-GitHub 同步包含笔记分组、文档、封面、正文引用的本地附件，以及插件安装清单、版本、卸载记录和插件数据。市场插件按锁定的版本与校验值重新下载；本地导入插件的 Manifest 与代码保存到私有笔记仓库。新设备恢复的插件默认停用，需在该设备确认权限后启用；远端卸载会移除本地安装，但保留插件数据。启用状态、授权、自定义目录绝对路径、主题和折叠等界面状态仍留在本机。
+GitHub 同步包含笔记分组、文档、封面、正文引用的本地附件，以及插件安装清单、版本、卸载记录和插件数据。市场插件按锁定的版本与校验值重新下载；本地导入插件的 Manifest、代码和 JS/CSS 等资源保存到私有笔记仓库。新设备恢复的插件默认停用，需在该设备确认权限后启用；远端卸载会移除本地安装，但保留插件数据。启用状态、授权、自定义目录绝对路径、主题和折叠等界面状态仍留在本机。
 
 打卡记录、AI 会话历史、模型设置、全局系统提示词与导入的 Skill 随插件数据同步。API Key 每台设备单独填写，由原生层保存在 macOS 钥匙串或 Android Keystore 保护的加密存储中，不进入 Workspace、GitHub 或 ZIP；模型接口地址变更后需重新填写 Key。GitHub 授权凭据也仅保存在本机安全存储。断开连接保留本地内容与远端仓库。
 
-插件数据存入私库的 `.typepro/extensions.json`，由清单引用。首次同步这些数据前，请将 Mac 与 Android 都升级到 1.5.0；1.4.x 不能读取包含该扩展字段的新远端清单。旧笔记仓库仍可由 1.5.0 读取。
+插件数据存入私库的 `.typepro/extensions.json`，由清单引用。1.5.0 开始支持插件扩展数据，1.4.x 不能读取包含该扩展字段的远端清单。本次 API 3 增加插件资源和网络来源字段，安装新版插件并同步前，请先将 Mac 与 Android 都升级到 1.6.0；旧笔记和已有插件业务数据保留。
 
 TypePro 沿用原「笔记」应用的标识和数据目录。Android 升级需沿用原签名密钥与包名，覆盖安装保留原有笔记。
 
-公开插件市场固定使用独立仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins) 的目录和 Release 安装包，不读取私有笔记仓库，也不使用笔记同步凭据。1.5.0 使用 `catalog-v2.json`，同时继续支持 API 1 插件；旧版 `catalog.json` 仅包含 API 1 插件。API 2 提供插件 JSON 存储、首页打卡组件与宿主 AI 页面，插件脚本仍不能直接联网。
+公开插件市场固定使用独立仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins) 的目录和 Release 安装包，不读取私有笔记仓库，也不使用笔记同步凭据。1.6.0 使用 `catalog-v3.json`；1.5.0 的 `catalog-v2.json` 和 API 1 的 `catalog.json` 保留各自可读版本。API 3 提供通用页面、事件、同步存储和受授权的网络／凭据接口，业务逻辑与界面由插件包实现。旧 API 2 业务插件提示更新，原数据保留。
 
 ## 开发与构建
 
@@ -76,7 +80,7 @@ npm run tauri -- android build --apk --target aarch64 armv7 --ci
 
 Android 签名环境变量和原生存储实现见 [原生说明](src-tauri/README.md)；实际使用的环境、构建和 DMG 打包步骤见 [构建记录](docs/BUILD.md)。Android 项目包含自定义 `MainActivity.kt` 与 `TransferPlugin.kt`，不要重新执行 `android init` 覆盖它们。
 
-应用安装包未设置自动发布。历史 Mac 安装包为个人使用的 ad-hoc 签名，未经过 Apple 公证；Android 使用个人 release 签名，更新必须沿用同一签名密钥。独立插件仓库通过 GitHub Actions 校验、打包并发布插件，与应用安装包构建分开。
+应用安装包未设置自动发布。本版 Mac 安装包为个人使用的 ad-hoc 签名，未经过 Apple 公证；Android 使用沿用的个人 release 密钥通过 apksigner 签名，与 1.5.0 证书一致，更新必须沿用同一签名密钥。独立插件仓库通过 GitHub Actions 校验、打包并发布插件，与应用安装包构建分开。
 
 ## 验证
 
@@ -86,11 +90,11 @@ node --experimental-strip-types --test src/editor/editor.test.mjs src/editor/cod
 node --experimental-strip-types --test src/editor/code-format/*.test.mjs
 node --experimental-strip-types --test src/sync/merge.test.mjs
 node --experimental-strip-types --test src/plugins/market.test.mjs
-node --experimental-strip-types --test src/plugins/state.test.mjs src/plugins/restore.test.mjs src/activity/activity.test.mjs src/assistant/assistant.test.mjs
+node --experimental-strip-types --test src/plugins/state.test.mjs src/plugins/restore.test.mjs
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-上述命令分别检查类型、Markdown 原文保留、选区／样式／折叠契约与流程图转换、同步合并、插件版本及更新权限、原生存储和导入导出。命令列表不代表本次已全部执行；新增打卡、插件状态／恢复和 AI 模块附有测试源码，测试源码本身不代表通过。1.5.0 的实际检查、构建和未验证项由 [构建记录](docs/BUILD.md) 记录；界面、系统文件选择器、平台 WebView 和真实 GitHub／AI 服务的验收结果不能用静态审查或单元测试代替。
+上述命令是开发检查参考，不代表本次已全部执行。本次已完成的类型检查、Rust 41 项、独立插件 17 项、分发 35 项、SDK 8 项及独立 WKWebView CSP 9 项检查，范围见 [本次审查记录](docs/PLUGIN-REFACTOR-REVIEW.md)；构建、发布及安装包结果以 [构建记录](docs/BUILD.md) 为准。界面、系统文件选择器、平台 WebView 和真实 GitHub／AI 服务的验收不能用静态审查或单元测试代替。
 
 ## 目录
 
@@ -105,13 +109,12 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 | `src/flow/` | 流程图绘制、Mermaid 解析与本地预览 |
 | `src/sync/` | GitHub 同步设置、前台调度、三方合并与远端模型校验 |
 | `src/plugins/`、`public/plugins/` | 插件市场、安装更新、权限、沙箱和宿主 API |
-| `src/activity/` | 人工编辑计数、撤销归属与首页热力图 |
-| `src/assistant/` | AI 会话、模型设置、笔记工具、差异确认和 Skill 导入 |
+| 独立插件仓库 `plugins/*/source/` | 打卡与 AI 的业务、界面、数据迁移及依赖 |
 | `src-tauri/src/` | 本地文件、恢复日志、导入导出、平台桥接 |
 | `src-tauri/src/github/` | GitHub 设备授权、专用私库校验、Git 数据接口与同步基线 |
 | `src-tauri/src/github_secrets.rs` | macOS 钥匙串与 Android 安全凭据桥接 |
 | `src-tauri/src/plugin_market.rs` | 固定公开目录、Release 下载、大小与 SHA-256 校验 |
-| `src-tauri/src/ai.rs`、`src-tauri/src/ai_secrets.rs` | 原生 AI 流式传输、取消和设备凭据 |
+| `src-tauri/src/plugin_services.rs`、`src-tauri/src/plugin_secrets.rs` | 通用 HTTPS、原始流传输、取消和插件隔离的设备凭据 |
 | `src-tauri/gen/android/` | Android 原生工程 |
 | `docs/GITHUB.md`、`docs/CONTRACT.md` | GitHub 使用与限制、共享数据及原生接口契约 |
 | `docs/MARKET.md`、`docs/PLUGINS.md` | 插件发布、市场使用和插件 API |

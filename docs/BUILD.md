@@ -1,8 +1,31 @@
 # 构建记录
 
-当前交付为 TypePro 1.5.0（Android versionCode `1005000`），包含每日打卡、AI 助手及插件安装与数据同步。用户已明确允许本次构建和必要检查；DMG／APK 已生成，两个插件已完成公开市场发布。本版实际检查见下方 1.5.0 记录，历史版本记录不代表本版验收。
+当前交付为 TypePro 1.6.0（Android versionCode `1006000`）及每日打卡 1.1.0、AI 助手 1.1.1（API 3）。本次已按授权完成 DMG／APK 构建、必要检查与插件远程发布；以下记录来自本版实际证据，历史版本记录不代替本版验收。
 
-以下为可复现构建参考；本次使用现有依赖执行前端检查与 Tauri 构建，未执行 npm ci。工具版本表记录现有构建环境。
+## 1.6.0 通用插件宿主交付记录（2026-10-22）
+
+- 本次 App 升级将打卡与 AI 的业务、界面迁出主程序，提供 API 3 通用宿主。之后已有接口范围内的插件业务和界面可独立发布，只有新增宿主能力或不兼容接口才需要升级 App。
+- 已通过：TypeScript 类型检查、Rust 41 项、独立插件 17 项（打卡 7、AI 数据／Skill／工具 7、SSE 3）、分发 35 项、纯 JavaScript SDK 8 项。插件测试使用 Node.js 22.23.2 的类型擦除与已有依赖；未在本地执行插件发布打包入口。详细范围见 [审查记录](PLUGIN-REFACTOR-REVIEW.md)。
+- 已完成静态契约核对与 Ponytail review；删除两个无用字段，最终复查无新增简化项。
+- Mac：1.6.0、`com.localnotes.notebook`、arm64，严格 codesign 与 hdiutil 校验通过，ad-hoc 签名、未公证。实际证据在工作区 `work/typepro-160-review/mac-package.json`。
+- Android：1.6.0／1006000、`com.localnotes.notebook`、ARM64＋ARMv7，minSdk 26、targetSdk 36。构建生成 unsigned APK 后，使用已有个人 release 密钥由 apksigner 签名；签名校验通过，证书与 1.5.0 相同。ZIP 16 KiB 与 ARM64 ELF 全部 LOAD 段 `0x4000` 对齐检查通过。实际证据在工作区 `work/typepro-160-review/android-package.json`。
+- 插件：[Publish plugins #7](https://github.com/Proberen/typepro-plugins/actions/runs/39759657722) 于源提交 `218ec1d6cc2a3ae573de860e0d83cc645d73e588` 成功，耗时 29 秒。首次每日打卡 1.1.0、AI 助手 1.1.0 Release 与 `catalog-v3.json` 已发布，目录 `updatedAt` 为 `2026-10-22T09:59:40Z`。实际 App `plugin_market.rs` 的 `Market::catalog`／`Market::download` 真实读取目录并下载全部 3 个包，大小和 SHA-256 校验通过；ZIP CRC、Manifest 与 JS/CSS 资源结构核对通过。`catalog.json` 和 `catalog-v2.json` 的条目与冻结基线完全一致；此次检查没有执行下载的插件代码。证据在工作区 `work/typepro-160-review/native-market-result.json` 与 `native-market-packages.json`。
+- AI 助手 1.1.1：只将插件 `ui.tsx` 中的 `base.css` 导入移至组件样式前，修复桌面错误显示移动端按钮的样式覆盖问题；App 1.6.0 和每日打卡 1.1.0 保持不变。[Publish plugins #8](https://github.com/Proberen/typepro-plugins/actions/runs/39761719863) 在源提交 `9a0d4b3b3398d699e84f53bad31239d65101c536` 上成功，耗时 24 秒；补丁已由原生模块真实下载，300248 字节、SHA-256 `f9c3ffc4e2614ee17b585eb4aebc9f0bdeb164b4d4fdbfa720466bc0b7b89599`，ZIP CRC 与资源结构校验通过；v1／v2 及 v3 其他条目未变。证据在工作区 `work/typepro-160-review/native-market-ai-111-result.json` 与 `native-market-ai-111-packages.json`。
+- 独立 WKWebView 在模拟 Tauri 资源 CSP／nonce 注入下完成 9／9 项检查：Worker 与视图启动、动态 Blob 脚本和样式、opaque origin 隔离、Worker 直连网络移除及缺少脚本／样式 nonce 的负对照通过。该检查使用真实 WKWebView，但不是打包 Tauri App UI 验收；证据在工作区 `work/typepro-160-review/wkwebview-csp-result.json`。
+- 本轮未验收打包 App UI、物理手机、系统文件选择器、Keychain／Keystore、真实模型流式响应和两台设备联网同步恢复。API Key 仍每台设备单独配置，不进入 GitHub。
+
+| 产物 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.6.0-mac-arm64.dmg | 13453572 | `0ef7fa2d86399dd12a5aca5c6880bfc3abdead69f0c0828d3eba7a06c893e0c7` |
+| TypePro-1.6.0-android.apk | 34314140 | `85563a416e7edc8a1017e83430b95957a286af10e52b1d0824e95f9212b74e86` |
+| notebook.ai-assistant 1.1.1 ZIP | 300248 | `f9c3ffc4e2614ee17b585eb4aebc9f0bdeb164b4d4fdbfa720466bc0b7b89599` |
+| notebook.daily-checkin 1.1.0 ZIP | 237939 | `644ca726105fb7fa779175c0a5ab0fec305a00afc95f345a7dc59ae5aaf186e0` |
+
+已发布的每日打卡 1.1.0 与 AI 助手 1.1.1 ZIP 视图资源另经独立 WKWebView 验证：打卡首页 13 项、AI 桌面会话页 15 项、AI 设置页 16 项、AI 窄屏页 17 项，共 61 项通过，包含桌面移动按钮隐藏和窄屏历史栏开关。使用模拟存储、Key 状态及受限 RPC，不启动业务 Worker、不访问真实笔记或模型；窄屏历史栏的 fixture 使用 `transition: none` 模拟 reduced-motion，默认动画时序未验证。结果在工作区 `work/typepro-160-review/plugin-ui-summary.json`，截图在交付目录 `TypePro-1.6.0-验收/`。这仍不等同正式 App、物理设备、真实模型或双设备联网同步验收。
+
+## 构建参考环境
+
+以下为可复现构建参考，工具表来自此前已完成的 1.5.0 构建；1.6.0 的实际构建结果以上方交付记录与证据为准。命令示例不代替执行授权或成功回执。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -25,12 +48,12 @@ npm ci
 CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 bash scripts/package-dmg.sh \
   src-tauri/target/release/bundle/macos/TypePro.app \
-  ../../outputs/TypePro-1.5.0-mac-arm64.dmg
+  ../../outputs/TypePro-1.6.0-mac-arm64.dmg
 ```
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-构建目标为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。示例显式指定输出为 `TypePro-1.5.0-mac-arm64.dmg`，已生成并通过检查。
+构建目标为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。示例显式指定输出为 `TypePro-1.6.0-mac-arm64.dmg`；本版已生成并通过以上检查，详见上方交付记录。
 
 ## Android
 
@@ -52,13 +75,25 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.5.0 的 Android versionCode 配置为 `1005000`，高于 1.4.0 的 `1004000`；CLI 构建时重新生成 `tauri.properties`。本次已完成构建。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.6.0 的 Android versionCode 配置为 `1006000`，高于 1.5.0 的 `1005000`；CLI 构建时重新生成 `tauri.properties`。本版已完成构建和独立签名，详见上方交付记录。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
 ```
 
-APK 输出路径为 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`。后续构建应沿用个人 release 签名、ARM64 和 ARMv7、minSdk 26、targetSdk 36，并检查 ARM64 原生库的 16KB 页面对齐；1.5.0 已通过以上检查，并与 1.4.0 比对签名证书一致。
+本轮 Gradle 先生成 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`，随后使用已有个人 release 密钥，通过 apksigner 签名输出交付 APK；密钥及密码从独立签名备份读取，密码不写入参数或日志。以下示例使用已配置的环境变量：
+
+```sh
+"$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+  --ks "$NOTEBOOK_KEYSTORE_PATH" \
+  --ks-key-alias "$NOTEBOOK_KEY_ALIAS" \
+  --ks-pass env:NOTEBOOK_KEYSTORE_PASSWORD \
+  --key-pass env:NOTEBOOK_KEY_PASSWORD \
+  --out ../../outputs/TypePro-1.6.0-android.apk \
+  src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
+```
+
+后续构建应沿用个人 release 签名、ARM64 和 ARMv7、minSdk 26、targetSdk 36，并检查 ZIP 与 ARM64 原生库的 16 KiB 对齐；本版实际检查结果见上方交付记录。未签名 APK 不能作为升级交付包。
 
 保留随源码交付的 Android 工程与自定义 Kotlin 文件，不要再次执行 `android init`。首次构建时 CLI 会生成 `tauri.settings.gradle`、`tauri.build.gradle.kts`、平台资源和本机路径；这些生成文件与构建缓存不在源码压缩包内。
 
@@ -72,7 +107,7 @@ Manifest 的 `@mipmap/ic_launcher` 在 Android 8 及以上通过 `mipmap-anydpi-
 
 ```sh
 codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
-hdiutil verify TypePro-1.5.0-mac-arm64.dmg
+hdiutil verify TypePro-1.6.0-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```

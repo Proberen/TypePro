@@ -16,10 +16,12 @@ export interface InstalledPlugin {
     name: string;
     version: string;
     description?: string;
-    apiVersion: 1 | 2;
+    apiVersion: 1 | 2 | 3;
+    networkOrigins?: string[];
     permissions: string[];
   };
   code: string;
+  files?: Record<string, string>;
   enabled: boolean;
   market?: { sha256: string; size: number; downloadUrl: string };
 }
@@ -37,6 +39,7 @@ export interface PluginInstallation {
   manifest: InstalledPlugin["manifest"];
   source: "market" | "local";
   code?: string;
+  files?: Record<string, string>;
   sha256?: string;
   size?: number;
   downloadUrl?: string;

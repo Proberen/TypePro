@@ -65,3 +65,15 @@ test('malformed and ambiguous JSON, duplicate identities, unexpected fields and 
   assert.throws(() => normalizeExtensions(state({ ...entry('settings', 1), updatedAt: '2026-02-30T00:00:00Z' })));
   assert.throws(() => recordInstallation(undefined, { ...plugin, market: { sha256: 'a'.repeat(64), size: 100, downloadUrl: 'http://github.com/Proberen/typepro-plugins/releases/download/v1/plugin.zip' } }));
 });
+
+test('API3 imported resource bytes and network origins synchronize without runtime grants', () => {
+  const resourcePlugin = { ...plugin, manifest: { ...plugin.manifest, apiVersion: 3, permissions: ['ui', 'network'], networkOrigins: ['https://api.example.com'] }, files: { 'ui.js': 'document.body.textContent="hello";', 'ui.css': 'body{color:var(--tp-text)}' } };
+  const result = recordInstallation(undefined, resourcePlugin);
+  assert.deepEqual(result.installs[0].files, resourcePlugin.files);
+  assert.deepEqual(result.installs[0].manifest.networkOrigins, resourcePlugin.manifest.networkOrigins);
+  const removed = recordInstallation(result, null, plugin.manifest.id);
+  assert.equal(removed.installs[0].files, undefined);
+  assert.equal(removed.installs[0].deleted, true);
+  assert.equal('enabled' in result.installs[0], false);
+  assert.throws(() => recordInstallation(undefined, { ...resourcePlugin, files: { '../ui.js': 'bad' } }));
+});

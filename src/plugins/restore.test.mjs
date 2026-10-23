@@ -119,3 +119,15 @@ test('capacity is checked against the latest list and tombstones free a slot bef
   assert.equal(full.applies, 0);
   assert.match(full.errors[0], /24/);
 });
+
+test('changed API3 view resources are restored disabled even when worker and manifest match', async () => {
+  const previous = { ...local(), manifest: { ...local().manifest, apiVersion: 3, permissions: ['ui'] }, files: { 'ui.js': 'old UI' } };
+  const record = { ...install(previous), files: { 'ui.js': 'new UI' } };
+  const h = harness([record], [previous]);
+  await restoreSyncedPlugins(h.options);
+  assert.equal(h.workspace.plugins[0].files['ui.js'], 'new UI');
+  assert.equal(h.workspace.plugins[0].enabled, false);
+  h.workspace.plugins[0].enabled = true;
+  await restoreSyncedPlugins(h.options);
+  assert.equal(h.workspace.plugins[0].enabled, true);
+});

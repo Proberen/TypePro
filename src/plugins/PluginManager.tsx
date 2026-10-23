@@ -9,19 +9,20 @@ import './plugins.css';
 export interface PluginManagerProps {
   plugins: InstalledPlugin[];
   onChange: (plugins: InstalledPlugin[]) => void | Promise<void>;
+  onOpenSettings?: (pluginId: string) => void;
   onImport: () => Promise<{ name: string; bytes: Uint8Array } | null>;
 }
 type Tab = 'market' | 'installed';
 type Pending = { kind: 'permissions'; id: string; enable: boolean } | { kind: 'market'; entry: MarketPlugin };
 
-function Permissions({ permissions, added = [] }: { permissions: string[]; added?: string[] }) {
-  return <div className="plugin-permissions">{permissions.length ? permissions.map(permission => {
+function Permissions({ permissions, origins = [], added = [] }: { permissions: string[]; origins?: string[]; added?: string[] }) {
+  return <div className="plugin-permissions">{permissions.length || origins.length ? [...permissions, ...origins.map(origin => `network:${origin}`)].map(permission => {
     const Icon = permission === 'notes.read' ? Eye : permission === 'notes.write' || permission === 'editor.insert' ? Pencil : Puzzle;
-    return <div className="plugin-permission" key={permission}><Icon aria-hidden="true" /><span>{PERMISSIONS[permission as keyof typeof PERMISSIONS] ?? permission}</span>{added.includes(permission) && <small>新增</small>}</div>;
+    return <div className="plugin-permission" key={permission}><Icon aria-hidden="true" /><span>{PERMISSIONS[permission as keyof typeof PERMISSIONS] ?? (permission.startsWith('network:') ? `网络来源：${permission.slice(8)}` : permission)}</span>{added.includes(permission) && <small>新增</small>}</div>;
   }) : <p className="plugin-empty">无需笔记权限</p>}</div>;
 }
 
-export function PluginManager({ plugins, onChange, onImport }: PluginManagerProps) {
+export function PluginManager({ plugins, onChange, onImport, onOpenSettings }: PluginManagerProps) {
   const [tab, setTab] = useState<Tab>('market');
   const [query, setQuery] = useState('');
   const [catalog, setCatalog] = useState<MarketCatalog | null>(null);
@@ -133,7 +134,7 @@ export function PluginManager({ plugins, onChange, onImport }: PluginManagerProp
       <button className="plugin-back" type="button" disabled={busy} onClick={() => { setPending(null); setError(''); }}><ArrowLeft aria-hidden="true" />{tab === 'market' ? '插件市场' : '已安装的插件'}</button>
       <div className="plugin-item plugin-permission-heading"><span className="plugin-mark"><Puzzle aria-hidden="true" /></span><div className="plugin-info"><h3>{manifest.name}<small>{installed && installed.manifest.version !== manifest.version ? `${installed.manifest.version} → ` : ''}{manifest.version}</small></h3>{manifest.description && <p>{manifest.description}</p>}</div></div>
       <h3 className="plugin-permission-label">{pending?.kind === 'permissions' && pending.enable ? '允许以下操作' : '声明的权限'}</h3>
-      <Permissions permissions={manifest.permissions} added={permissionChanges} />
+      <Permissions permissions={manifest.permissions} origins={manifest.networkOrigins} added={permissionChanges} />
       {permissionChanges.length > 0 && <p className="plugin-update-note">新增权限，更新后需重新启用</p>}
       <div className="plugin-permission-actions"><button className="plugin-outline" type="button" disabled={busy} onClick={() => { setPending(null); setError(''); }}>取消</button>
         {entry ? <button className="plugin-primary" type="button" disabled={busy || !native || !canInstall} onClick={() => void installMarket(entry)}>{busy ? '正在安装…' : installed ? canInstall ? '更新' : '已安装' : '安装'}</button>
@@ -162,7 +163,7 @@ export function PluginManager({ plugins, onChange, onImport }: PluginManagerProp
         <div className="plugin-manager-top"><span>已安装 · {plugins.length}</span><button className="plugin-outline" type="button" disabled={busy} onClick={() => void importLocal()}><Plus aria-hidden="true" />导入插件</button></div>
         <div className="plugin-list">{plugins.map(plugin => {
           const update = catalog?.plugins.find(value => value.id === plugin.manifest.id && compareVersions(value.version, plugin.manifest.version) === 1);
-          return <article className="plugin-item" key={plugin.manifest.id}><span className="plugin-mark"><Puzzle aria-hidden="true" /></span><div className="plugin-info"><h3>{plugin.manifest.name}<small>{plugin.manifest.version}</small></h3>{plugin.manifest.description && <p>{plugin.manifest.description}</p>}<div className="plugin-item-actions"><button type="button" disabled={busy} onClick={() => review({ kind: 'permissions', id: plugin.manifest.id, enable: false })}>权限</button>{update && <button className="plugin-update-action" type="button" disabled={busy} onClick={() => review({ kind: 'market', entry: update })}>更新至 {update.version}</button>}<button type="button" disabled={busy} onClick={() => void change(previous => previous.filter(value => value.manifest.id !== plugin.manifest.id))}>移除</button></div></div>
+          return <article className="plugin-item" key={plugin.manifest.id}><span className="plugin-mark"><Puzzle aria-hidden="true" /></span><div className="plugin-info"><h3>{plugin.manifest.name}<small>{plugin.manifest.version}</small></h3>{plugin.manifest.description && <p>{plugin.manifest.description}</p>}<div className="plugin-item-actions"><button type="button" disabled={busy} onClick={() => review({ kind: 'permissions', id: plugin.manifest.id, enable: false })}>权限</button>{plugin.enabled && onOpenSettings && <button type="button" disabled={busy} onClick={() => onOpenSettings(plugin.manifest.id)}>设置</button>}{update && <button className="plugin-update-action" type="button" disabled={busy} onClick={() => review({ kind: 'market', entry: update })}>更新至 {update.version}</button>}<button type="button" disabled={busy} onClick={() => void change(previous => previous.filter(value => value.manifest.id !== plugin.manifest.id))}>移除</button></div></div>
             <button className={`plugin-toggle ${plugin.enabled ? 'plugin-on' : ''}`} type="button" role="switch" aria-checked={plugin.enabled} aria-label={`${plugin.enabled ? '停用' : '启用'} ${plugin.manifest.name}`} disabled={busy} onClick={() => plugin.enabled ? void change(previous => previous.map(value => value.manifest.id === plugin.manifest.id ? { ...value, enabled: false } : value)) : review({ kind: 'permissions', id: plugin.manifest.id, enable: true })} />
           </article>;
         })}</div>

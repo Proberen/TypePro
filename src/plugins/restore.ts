@@ -1,7 +1,7 @@
 import { command } from '../lib/bridge.ts';
 import type { InstalledPlugin, PluginInstallation, Workspace } from '../lib/types';
 import { parseMarketCatalog, prepareMarketInstall, type MarketPlugin } from './market.ts';
-import { validatePlugin } from './packages.ts';
+import { normalizePluginFiles, validatePlugin } from './packages.ts';
 
 export interface RestorePluginOptions {
   getWorkspace: () => Workspace | null;
@@ -15,8 +15,9 @@ const snapshot = (value: unknown) => JSON.stringify(value);
 const manifestIdentity = (plugin: Pick<InstalledPlugin, 'manifest'>) => snapshot([
   plugin.manifest.id, plugin.manifest.name, plugin.manifest.version,
   plugin.manifest.apiVersion, plugin.manifest.description ?? '',
-  [...plugin.manifest.permissions].sort(),
+  [...plugin.manifest.permissions].sort(), [...(plugin.manifest.networkOrigins ?? [])].sort(),
 ]);
+const sameFiles = (left: InstalledPlugin['files'], right: InstalledPlugin['files']) => snapshot(normalizePluginFiles(left)) === snapshot(normalizePluginFiles(right));
 const sameManifest = (plugin: InstalledPlugin, record: PluginInstallation) => manifestIdentity(plugin) === manifestIdentity(record);
 const samePin = (plugin: InstalledPlugin, record: PluginInstallation) => !!plugin.market
   && plugin.market.sha256 === record.sha256 && plugin.market.size === record.size
@@ -69,7 +70,7 @@ export async function restoreSyncedPlugins(options: RestorePluginOptions): Promi
       }
 
       if (previous && sameManifest(previous, record)
-        && (record.source === 'local' ? previous.code === record.code && !previous.market : samePin(previous, record))) continue;
+        && (record.source === 'local' ? previous.code === record.code && sameFiles(previous.files, record.files) && !previous.market : samePin(previous, record))) continue;
 
       let next: InstalledPlugin;
       if (record.source === 'market') {
@@ -79,9 +80,9 @@ export async function restoreSyncedPlugins(options: RestorePluginOptions): Promi
         // Restoration can target an older immutable release. No update/downgrade policy applies here.
         next = prepareMarketInstall(entry, bytes);
       } else {
-        next = validatePlugin({ manifest: record.manifest, code: record.code });
+        next = validatePlugin({ manifest: record.manifest, code: record.code, files: record.files });
       }
-      if (previous && manifestIdentity(previous) === manifestIdentity(next) && previous.code === next.code) {
+      if (previous && manifestIdentity(previous) === manifestIdentity(next) && previous.code === next.code && sameFiles(previous.files, next.files)) {
         // Identical locally approved bytes may acquire their missing market provenance.
         next = { ...next, enabled: previous.enabled };
       } else next = { ...next, enabled: false };

@@ -3,8 +3,8 @@ mod github_secrets;
 mod plugin_market;
 mod storage;
 mod transfer;
-mod ai;
-mod ai_secrets;
+mod plugin_services;
+mod plugin_secrets;
 use github::{
     Authorization, AuthorizationPoll, Github, GithubStatus, PublishResult, ReadRemoteResult,
     RepositoryPreparation, SyncSnapshot, SyncWorkspace,
@@ -288,8 +288,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(transfer::init())
         .plugin(github_secrets::init())
-        .plugin(ai_secrets::init())
-        .manage(ai::AiService::new())
+        .plugin(plugin_secrets::init())
+        .manage(plugin_services::PluginServices::new())
         .setup(|app| {
             let data = app.path().app_data_dir()?;
             app.manage(GithubService(Github::new(data.join("github-sync"))));
@@ -303,12 +303,13 @@ pub fn run() {
             plugin_market_catalog,
             plugin_market_download,
             plugin_market_restore,
-            ai::ai_configure_key,
-            ai::ai_key_status,
-            ai::ai_remove_key,
-            ai::ai_models,
-            ai::ai_chat,
-            ai::ai_cancel,
+            plugin_services::plugin_session_start,
+            plugin_services::plugin_session_stop,
+            plugin_services::plugin_network_request,
+            plugin_services::plugin_network_cancel,
+            plugin_services::plugin_secret_configure,
+            plugin_services::plugin_secret_status,
+            plugin_services::plugin_secret_remove,
             github_status,
             github_configure,
             github_start_authorization,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { strToU8, zipSync } from 'fflate';
 import { addedPermissions, compareVersions, parseMarketCatalog, prepareMarketInstall } from './market.ts';
+import { PACKAGE_LIMITS, parsePluginPackage } from './packages.ts';
 
 const manifest = (overrides = {}) => ({ id: 'date.tool', name: '日期工具', version: '1.1.0', apiVersion: 1, permissions: ['editor.insert'], ...overrides });
 const bytesFor = value => zipSync({ 'manifest.json': strToU8(JSON.stringify(value)), 'main.js': strToU8('await notebook.editor.insert("today");') });
@@ -24,7 +25,7 @@ test('catalog validates manifest, package metadata, unique ids and exact public 
   assert.deepEqual(parseMarketCatalog(catalog([api2])).plugins[0], api2);
   assert.throws(() => parseMarketCatalog(catalog([{ ...api2, apiVersion: 1 }])));
   assert.throws(() => parseMarketCatalog(catalog([entry, entry])), /重复/);
-  for (const override of [{ size: 0 }, { size: 2097153 }, { sha256: 'A'.repeat(64) }, { apiVersion: 3 }, { permissions: ['network'] }, { version: '01.0.0' }]) assert.throws(() => parseMarketCatalog(catalog([{ ...entry, ...override }])));
+  for (const override of [{ size: 0 }, { size: 8388609 }, { sha256: 'A'.repeat(64) }, { apiVersion: 4 }, { permissions: ['network'] }, { version: '01.0.0' }]) assert.throws(() => parseMarketCatalog(catalog([{ ...entry, ...override }])));
   for (const downloadUrl of ['http://github.com/Proberen/typepro-plugins/releases/download/v1/a.zip', 'https://example.com/a.zip', 'https://github.com/another/repo/releases/download/v1/a.zip', `${entry.downloadUrl}?token=secret`, `https://name@github.com${new URL(entry.downloadUrl).pathname}`]) assert.throws(() => parseMarketCatalog(catalog([{ ...entry, downloadUrl }])));
 });
 
@@ -35,6 +36,21 @@ test('downloaded metadata must exactly match the reviewed catalog entry', () => 
   }
   const bytes = bytesFor(manifest());
   assert.throws(() => prepareMarketInstall({ ...entryFor(), size: bytes.length + 1 }, bytes), /大小/);
+});
+
+test('catalog download metadata does not consume the manifest byte allowance', () => {
+  const encoder = new TextEncoder();
+  let value;
+  for (let length = 440; length < 510; length++) {
+    const host = Array.from({ length: Math.ceil(length / 60) }, (_, index) => 'a'.repeat(Math.min(60, length - index * 60))).join('.');
+    const candidate = manifest({ apiVersion: 3, permissions: ['network'], networkOrigins: Array.from({ length: 32 }, (_, index) => `https://${index}.${host}.example.com`) });
+    const size = encoder.encode(JSON.stringify(candidate)).length;
+    if (size <= PACKAGE_LIMITS.manifest && size > PACKAGE_LIMITS.manifest - 64) { value = candidate; break; }
+  }
+  assert.ok(value, 'fixture should approach the valid manifest limit');
+  const entry = entryFor(value);
+  assert.ok(encoder.encode(JSON.stringify(entry)).length > PACKAGE_LIMITS.manifest);
+  assert.deepEqual(parseMarketCatalog(catalog([entry])).plugins[0].networkOrigins, [...value.networkOrigins].sort());
 });
 
 test('install and update never enable new permissions implicitly and retain previous object', () => {
@@ -52,4 +68,31 @@ test('install and update never enable new permissions implicitly and retain prev
 test('updates reject same version, downgrade, incomparable legacy version and different id', () => {
   const entry = entryFor(), bytes = bytesFor(manifest());
   for (const overrides of [{ version: '1.1.0' }, { version: '2.0.0' }, { version: '01.0.0' }, { id: 'other.tool' }]) assert.throws(() => prepareMarketInstall(entry, bytes, previous({ manifest: manifest(overrides) })), /版本已变化/);
+});
+
+
+test('API3 resources and origins survive package parsing and new origins require a fresh grant', () => {
+  const value = manifest({ apiVersion: 3, permissions: ['ui', 'network'], networkOrigins: ['https://api.example.com'] });
+  const bytes = zipSync({ 'manifest.json': strToU8(JSON.stringify(value)), 'main.js': strToU8('await notebook.ui.open("view");'), 'files/ui.js': strToU8('document.body.textContent="plugin UI";'), 'files/ui.css': strToU8('body{color:var(--tp-text)}') });
+  const entry = { ...entryFor(value), size: bytes.length };
+  const result = prepareMarketInstall(entry, bytes);
+  assert.equal(result.files['ui.js'], 'document.body.textContent="plugin UI";');
+  assert.deepEqual(result.manifest.networkOrigins, ['https://api.example.com']);
+  const old = previous({ manifest: { ...value, version: '1.0.0', networkOrigins: ['https://old.example.com'] } });
+  assert.deepEqual(addedPermissions(old, entry), ['network:https://api.example.com']);
+  assert.equal(prepareMarketInstall(entry, bytes, old).enabled, false);
+  assert.throws(() => prepareMarketInstall({ ...entry, networkOrigins: ['https://different.example.com'] }, bytes), /不一致/);
+});
+
+test('resource imports reject legacy APIs, unsafe paths, invalid UTF-8 and resource limits', () => {
+  const value = manifest({ apiVersion: 3, permissions: ['ui'] });
+  const source = { 'manifest.json': strToU8(JSON.stringify(value)), 'main.js': strToU8('const ready = true;') };
+  for (const resource of ['files/../ui.js', 'files/__proto__/ui.js', 'files/runner.exe', 'other.js']) {
+    assert.throws(() => parsePluginPackage('plugin.zip', zipSync({ ...source, [resource]: strToU8('x') })), /无效/);
+  }
+  assert.throws(() => parsePluginPackage('plugin.zip', zipSync({ ...source, 'files/ui.js': new Uint8Array([0xff]) })), /UTF-8/);
+  assert.throws(() => parsePluginPackage('plugin.zip', zipSync({ ...source, 'files/ui.js': new Uint8Array(PACKAGE_LIMITS.resource + 1) })), /限制/);
+  const resources = Object.fromEntries(Array.from({ length: PACKAGE_LIMITS.files - 1 }, (_, index) => [`files/${index}.txt`, strToU8('x')]));
+  assert.throws(() => parsePluginPackage('plugin.zip', zipSync({ ...source, ...resources })), /限制/);
+  assert.throws(() => parsePluginPackage('plugin.zip', zipSync({ ...source, 'manifest.json': strToU8(JSON.stringify(manifest())), 'files/ui.js': strToU8('x') })), /API 3|apiVersion: 3/);
 });

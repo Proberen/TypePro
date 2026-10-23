@@ -1,3 +1,4 @@
+import { normalizeNetworkOrigins, normalizePluginFiles, PACKAGE_LIMITS } from './packages.ts';
 import type { ExtensionEntry, ExtensionState, InstalledPlugin, JsonValue, PluginInstallation } from '../lib/types';
 
 export const EXTENSION_LIMITS = { bytes: 32 * 1024 * 1024, entries: 20000, installs: 128 } as const;
@@ -55,25 +56,30 @@ function metadata(value: unknown) {
   return { updatedAt: timestamp(record.updatedAt), deviceId: identifier(record.deviceId, UUID), ...(record.deleted === undefined ? {} : { deleted: record.deleted }) };
 }
 function manifest(value: unknown): InstalledPlugin['manifest'] {
-  const item = object(value, ['id', 'name', 'version', 'description', 'apiVersion', 'permissions']);
+  const item = object(value, ['id', 'name', 'version', 'description', 'apiVersion', 'permissions', 'networkOrigins']);
   const id = identifier(item.id, ID), name = string(item.name, 240), version = string(item.version, 40);
-  if (!name.trim() || Array.from(name).length > 60 || !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(version) || (item.apiVersion !== 1 && item.apiVersion !== 2)) throw new Error('同步插件清单无效');
+  if (!name.trim() || Array.from(name).length > 60 || !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(version) || (item.apiVersion !== 1 && item.apiVersion !== 2 && item.apiVersion !== 3)) throw new Error('同步插件清单无效');
   if (!Array.isArray(item.permissions) || item.permissions.length > 64 || item.permissions.some(value => typeof value !== 'string' || !/^[a-z][a-z0-9.-]{0,63}$/.test(value)) || new Set(item.permissions).size !== item.permissions.length) throw new Error('同步插件权限无效');
   const description = item.description === undefined ? undefined : string(item.description, 1200);
   if (description !== undefined && Array.from(description).length > 300) throw new Error('插件说明过长');
-  return { id, name, version, apiVersion: item.apiVersion, permissions: [...item.permissions].sort(), ...(description === undefined ? {} : { description }) };
+  const networkOrigins = normalizeNetworkOrigins(item.networkOrigins);
+  if (item.networkOrigins !== undefined && (item.apiVersion !== 3 || !item.permissions.includes('network'))) throw new Error('同步插件网络权限无效');
+  return { id, name, version, apiVersion: item.apiVersion, ...(item.networkOrigins === undefined ? {} : { networkOrigins }), permissions: [...item.permissions].sort(), ...(description === undefined ? {} : { description }) };
 }
 function installation(raw: unknown): PluginInstallation {
-  const item = object(raw, ['id', 'manifest', 'source', 'code', 'sha256', 'size', 'downloadUrl', 'updatedAt', 'deviceId', 'deleted']);
+  const item = object(raw, ['id', 'manifest', 'source', 'code', 'files', 'sha256', 'size', 'downloadUrl', 'updatedAt', 'deviceId', 'deleted']);
   const id = identifier(item.id, ID), details = manifest(item.manifest), meta = metadata(item);
   if (id !== details.id) throw new Error('插件同步身份不一致');
   if (item.source === 'local') {
     if (item.sha256 !== undefined || item.size !== undefined || item.downloadUrl !== undefined) throw new Error('本地插件不能包含市场下载信息');
-    const code = string(item.code, 512 * 1024);
+    const code = string(item.code, PACKAGE_LIMITS.code);
+    const files = normalizePluginFiles(item.files);
+    if (files && details.apiVersion !== 3) throw new Error('同步插件资源需要 API 3');
+    if (encoder.encode(code + JSON.stringify(details) + Object.values(files ?? {}).join('')).length > PACKAGE_LIMITS.bytes) throw new Error('同步插件包过大');
     if (!code.trim() && !meta.deleted) throw new Error('同步插件代码为空');
-    return { id, manifest: details, source: 'local', code: meta.deleted ? '' : code, ...meta };
+    return { id, manifest: details, source: 'local', code: meta.deleted ? '' : code, ...(!meta.deleted && files ? { files } : {}), ...meta };
   }
-  if (item.source !== 'market' || item.code !== undefined || typeof item.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.sha256) || !Number.isSafeInteger(item.size) || Number(item.size) < 1 || Number(item.size) > 2 * 1024 * 1024) throw new Error('市场插件同步信息无效');
+  if (item.source !== 'market' || item.code !== undefined || item.files !== undefined || typeof item.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.sha256) || !Number.isSafeInteger(item.size) || Number(item.size) < 1 || Number(item.size) > PACKAGE_LIMITS.bytes) throw new Error('市场插件同步信息无效');
   const downloadUrl = string(item.downloadUrl, 2048);
   const url = new URL(downloadUrl);
   if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password || url.search || url.hash || !/^\/Proberen\/typepro-plugins\/releases\/download\/[^/]+\/[^/]+\.zip$/.test(url.pathname)) throw new Error('插件下载地址不受支持');
@@ -167,7 +173,7 @@ export function removePluginData(state: ExtensionState | undefined, pluginId: st
 export function recordInstallation(state: ExtensionState | undefined, plugin: InstalledPlugin | null, id = plugin?.manifest.id): ExtensionState {
   const normalized = normalizeExtensions(state), previous = normalized.installs.find(item => item.id === id);
   if (!id || (!plugin && !previous)) return normalized;
-  const value = plugin ? { id, manifest: plugin.manifest, ...(plugin.market ? { source: 'market' as const, ...plugin.market } : { source: 'local' as const, code: plugin.code }) } : { ...previous!, ...(previous!.source === 'local' ? { code: '' } : {}), deleted: true };
+  const value = plugin ? { id, manifest: plugin.manifest, ...(plugin.market ? { source: 'market' as const, ...plugin.market } : { source: 'local' as const, code: plugin.code, ...(plugin.files ? { files: plugin.files } : {}) }) } : { ...previous!, ...(previous!.source === 'local' ? { code: '', files: undefined } : {}), deleted: true };
   const record = installation({ ...value, updatedAt: previous?.updatedAt || new Date().toISOString(), deviceId: previous?.deviceId || extensionDeviceId() });
   if (previous && JSON.stringify(previous) === JSON.stringify(record)) return normalized;
   const next = { ...record, updatedAt: nextTimestamp(previous), deviceId: extensionDeviceId() };

@@ -17,16 +17,16 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 @InvokeArg
-class AiSecretArgs {
+class PluginSecretArgs {
     lateinit var account: String
     var value: String? = null
 }
 
 /** Separate from GitHub credentials and excluded from note/plugin synchronization. */
 @TauriPlugin
-class AiSecretsPlugin(private val activity: Activity) : Plugin(activity) {
-    private val alias = "typepro.ai.credentials.v1"
-    private val prefs get() = activity.getSharedPreferences("typepro_ai_secure", Activity.MODE_PRIVATE)
+class PluginSecretsPlugin(private val activity: Activity) : Plugin(activity) {
+    private val alias = "typepro.plugin.credentials.v1"
+    private val prefs get() = activity.getSharedPreferences("typepro_plugin_secure", Activity.MODE_PRIVATE)
 
     @Synchronized
     private fun key(): SecretKey {
@@ -42,7 +42,7 @@ class AiSecretsPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun args(invoke: Invoke): AiSecretArgs = invoke.parseArgs(AiSecretArgs::class.java).also {
+    private fun args(invoke: Invoke): PluginSecretArgs = invoke.parseArgs(PluginSecretArgs::class.java).also {
         require(it.account.matches(Regex("[A-Za-z0-9._-]{1,128}"))) { "Invalid credential account" }
     }
 
@@ -61,7 +61,7 @@ class AiSecretsPlugin(private val activity: Activity) : Plugin(activity) {
             check(prefs.edit().putString(args.account, payload).commit())
             invoke.resolve(JSObject())
         } catch (_: Exception) {
-            invoke.reject("Cannot save AI key securely")
+            invoke.reject("Cannot save plugin credential securely")
         }
     }
 
@@ -84,7 +84,7 @@ class AiSecretsPlugin(private val activity: Activity) : Plugin(activity) {
             }
             invoke.resolve(result)
         } catch (_: Exception) {
-            invoke.reject("Cannot read AI key securely; enter the key again")
+            invoke.reject("Cannot read plugin credential securely; enter the key again")
         }
     }
 
@@ -94,7 +94,7 @@ class AiSecretsPlugin(private val activity: Activity) : Plugin(activity) {
             check(prefs.edit().remove(args(invoke).account).commit())
             invoke.resolve(JSObject())
         } catch (_: Exception) {
-            invoke.reject("Cannot remove AI key")
+            invoke.reject("Cannot remove plugin credential")
         }
     }
 }

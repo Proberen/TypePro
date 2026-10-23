@@ -5,6 +5,15 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.6.0",
+    changes: [
+      "插件 API 3：通用页面、工具入口、编辑事件、同步存储和按域名授权的网络能力。",
+      "打卡与 AI 的逻辑、界面及依赖拆入独立插件，后续业务更新通过插件市场分发。",
+      "插件 JS/CSS 资源随本地安装恢复与 GitHub 同步；新权限、新来源需本机确认。",
+      "插件凭据仅保存在设备安全存储，旧 AI Key 需在插件中重新配置一次。",
+    ],
+  },
+  {
     version: "1.5.0",
     changes: [
       "新增每日打卡插件：首页贡献热力图、按日新增与删除字数，支持撤销抵消与多设备汇总。",

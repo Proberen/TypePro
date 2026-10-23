@@ -1,66 +1,56 @@
 # 插件市场
 
-TypePro 的市场固定连接独立公开仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins)。1.5.0 使用 `main/catalog-v2.json`，支持 API 1 和 API 2 插件；1.4.x 使用的 `main/catalog.json` 继续只提供 API 1 插件。GitHub Releases 提供每个版本的 ZIP。浏览和下载无需 GitHub 登录，也不使用私有笔记仓库或笔记同步令牌。
+市场使用独立公开仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins)。API 3 宿主读取 `main/catalog-v3.json`；旧版客户端继续读取原有的 `catalog.json`（API 1）或 `catalog-v2.json`（API 1／2）。插件包放在各版本不可变的 GitHub Release，浏览下载不使用私有笔记仓库的凭据。
 
-每日打卡与 AI 助手 1.0.0 已发布，需要 TypePro 1.5.0；本次 DMG／APK 已生成。安装包与实际验证范围见 [构建记录](BUILD.md)。
+TypePro 1.6.0 DMG／APK 已生成，每日打卡 1.1.0 与 AI 助手初版 1.1.0 已通过 [Publish plugins #7](https://github.com/Proberen/typepro-plugins/actions/runs/39759657722) 发布；AI 助手 1.1.1 独立样式补丁已通过 [Publish plugins #8](https://github.com/Proberen/typepro-plugins/actions/runs/39761719863) 发布，新包已由原生模块真实下载并通过大小／SHA-256 及包结构校验。App 1.6.0 安装包不变。首次发布的三个市场包真实下载校验通过，旧目录条目保持不变。插件源码由独立仓库维护。此次 App 升级提供通用能力，之后已有接口范围内的插件业务和界面可以独立发布。源码上传、工作流发布与实际下载检查均有独立证据，见 [构建记录](BUILD.md)；本轮未验收真实设备中的安装启用与模型调用。完整接口和权限以 [插件规范](PLUGIN-SPEC.md) 为准。
 
-## 在应用中使用
+## 使用与恢复
 
-1. 打开「插件 → 插件市场」，搜索插件，查看版本、说明和权限。进入市场立即检查，支持手动刷新；市场页面在前台打开期间每 60 秒检查一次。隐藏、离开或关闭市场后停止轮询。网络和 GitHub 缓存可能影响新版本出现时间。
-2. 点击「安装」，审阅名称、版本与权限，再确认下载。新插件默认停用，需到「已安装」确认权限后启用。普通浏览器预览不执行市场下载安装，需使用 Mac 或 Android 原生应用。
-3. 新版本出现后点击「更新」，审阅后手动确认。更新不会降级；未新增权限时保留原启用状态，新增权限时停用并等待重新确认。下载或校验失败保留旧插件；保存失败会恢复旧插件列表并尝试回写，存储持续不可写时显示错误。
+进入市场立即检查，也支持手动刷新；市场页面在前台打开时每 60 秒检查。新安装插件默认停用，在本设备确认权限后启用。更新需要手动确认；新权限或新增网络来源会停用插件，等待重新授权。下载安装失败保留旧版本。最多安装 24 个插件。
 
-安装与更新核对目录中的包大小、SHA-256 和包内 Manifest，拒绝与审阅信息不一致的包。同一设备最多安装 24 个插件。市场离线不影响已安装插件使用。
+安装时核对用户审阅的 id、版本、Manifest、网络来源、包大小与 SHA-256。包内的脚本和全部资源都属于校验内容。同一版本禁止替换字节，发布新业务逻辑或界面必须提高插件版本；使用已有 API 的插件更新不要求修改宿主。
 
-开启 GitHub 笔记同步后，安装清单、准确版本、卸载记录和插件 JSON 数据进入私有 `typepro-notes` 仓库。新设备按原版本的不可变 Release 下载，不要求该旧版本仍在最新目录中；原生层验证版本对应的固定 Release 地址、大小和 SHA-256，前端再次验证包内 Manifest。恢复的新插件或变化版本默认停用，首次运行需在该设备确认权限；已有相同代码保留本机启用选择。恢复失败保留旧版，远端卸载移除本机安装但保留数据。启用状态和授权仍是设备本地选择。
+GitHub 笔记同步保存安装清单、准确版本、卸载记录及插件 JSON 数据。本地导入包还保存全部脚本和资源；市场包保存不可变 Release 地址与哈希。恢复时下载原版本并完整校验，新的或变化的包默认停用。完全相同的本地字节可保留本机启用决定。卸载保留业务数据。
 
-本地导入插件通过私有仓库保存 Manifest 和代码，恢复也默认停用。API Key 不存入插件数据；笔记 ZIP 不携带插件代码、安装清单或数据。Mac 与 Android 应先全部升级到 1.5.0，再启用新版插件同步，兼容说明见 [GitHub 同步](GITHUB.md)。
+启用状态、授权和 API Key 不跨设备同步。API 3 增加了资源与网络来源字段，所有同步设备都应先更新到支持 API 3 的宿主，再安装新版插件；旧版严格解析器不能读取新字段。笔记 ZIP 不包含插件安装清单、脚本、资源或数据。
 
-ZIP／JSON 本地导入仍可使用；相同 id 的本地导入需先移除旧版，市场则提供上述更新流程。插件 API 与沙箱限制见 [自定义插件](PLUGINS.md)。
+## 源码与远程打包
 
-## 上传和发布
-
-在公开仓库的 `main` 分支维护以下文件，可通过 GitHub「Add file → Upload files」上传，或用 Git 提交：
+简单脚本继续使用两文件格式；带界面的插件使用以下结构：
 
 ```text
-plugins/
-  <插件 id>/
-    manifest.json
-    main.js
+plugins/<插件 id>/
+  manifest.json
+  source/
+    main.ts        # export default async function init()
+    ui.tsx         # 可选，界面入口，自带业务逻辑与样式导入
 ```
 
-目录名与 `manifest.id` 必须一致。可参考仓库内 API 1 的 `notebook.date-and-count`，API 2 的 `notebook.daily-checkin` 和 `notebook.ai-assistant`。只上传可公开的插件源码，不放笔记、私有仓库信息、个人访问令牌或其他凭据。
+远程工作流把 Worker 入口打包为 `main.js`，再等待其导出的初始化函数。界面打包为 `files/ui.js` 和可选的 `files/ui.css`。构建产物是独立浏览器脚本，不能引用宿主源码、宿主 React 或外部远程脚本。根 `package.json` 固定构建依赖版本，业务插件通过 SDK 与宿主通信。现有纯 JavaScript 插件仍可直接维护 `manifest.json`、`main.js`。
 
-新增或修改插件后查看「Actions → Publish plugins」。工作流先校验，再生成确定性 ZIP、发布独立 Release 并核对下载字节；本批全部成功后，将 `catalog.json` 和 `catalog-v2.json` 放在同一次提交中更新。旧目录只含 API 1，新目录包含 API 1／2。工作流可在 Actions 手动触发。无需自行维护服务器或在客户端配置发布凭据。
+`build-plugins.mjs` 仅允许 GitHub Actions 发布环境执行。此次已获准发布插件，仍使用真实远程发布工作流，不通过伪装 CI 环境在本地执行该入口。必要检查已通过分发 35 项及独立插件 17 项；具体构建与发布状态见 [构建记录](BUILD.md)。
 
-更新必须提高 `manifest.version`，例如 `1.0.0` → `1.0.1`；相同版本不能替换内容或改变校验值。发布器优先以已有 `catalog-v2.json` 核对历史版本，仅在该文件不存在时读取旧目录，不会忽略损坏的新目录。不要手改目录清单或覆盖旧 Release。删除插件源码目录并发布，可将其从市场下架，已安装副本和旧版本包仍保留。发布失败时在 Actions 查看错误并重试；清单不会发布部分成功的结果。若期间 `main` 有新提交，旧工作流不会覆盖它，可从最新 `main` 重试。
+公开源码只放可公开的材料，不放笔记、令牌和 API Key。更新源码后，Actions 的 Publish plugins 工作流依次安装固定依赖、打包插件界面、校验发布器、生成确定性 ZIP、发布并下载核对所有版本包。整批成功后才一次提交三个版本目录；失败不提交部分市场清单。
 
-仓库需允许 GitHub Actions 写入 Contents、发布 Release 并向 `main` 提交目录。分支保护若阻止发布机器人提交，需由仓库管理员调整对应规则。完整发布规则以 [插件仓库说明](https://github.com/Proberen/typepro-plugins#readme) 为准。
+发布器优先读取 `catalog-v3.json`，不存在时才读取 v2 或旧目录。已存在但损坏的高版本目录直接报错。目录版本不可降级，同版本不得改变包大小或哈希。`catalog-v3.json` 发布最新兼容插件；同一插件升级 API 后，旧目录保留最后一个兼容版本。删除源码目录则从各目录下架，已安装包与历史 Release 保留。
 
-## 包和目录契约
+## 包格式与限制
 
-ZIP 根目录包含 `manifest.json` 与 `main.js`；脚本不依赖 npm 包。安装包与解压内容总计最多 2 MiB，脚本最多 512 KiB，Manifest 最多 16 KiB。`apiVersion` 支持 `1` 和 `2`；新增 `storage`、`home.activity`、`assistant` 权限仅允许 API 2 声明，旧版客户端不能安装 API 2。权限只允许现有插件 API，插件脚本不能直接联网或任意读写本地文件。AI 联网与笔记工具由获准的宿主页面执行。
+ZIP 根目录包含 `manifest.json`、`main.js`，API 3 可包含 `files/` 下的 UTF-8 资源。JSON 导入格式为 `{manifest,code,files?}`。资源名为安全相对路径，扩展名限定 `.js`、`.css`、`.json`、`.txt`、`.md`、`.svg`；拒绝路径穿越、重复路径、符号链接和原生可执行文件。
 
-市场版本采用严格语义版本，最多 40 个字符：支持 `1.0.0`、`1.0.0-rc.10`，不支持 `+` 构建标记、数字段多余前导零或空预发布段。`01.0.0`、`1.0.0-rc.01`、`1.0.0-a..b` 均无效。本地导入沿用原校验规则；无法严格排序的历史版本不会获得市场更新提示，仍可继续使用。
-
-目录最大 1 MiB、最多 500 个唯一 id，结构如下；空数组表示暂无已发布插件：
-
-```json
-{
-  "schemaVersion": 1,
-  "updatedAt": "2026-10-22T00:00:00Z",
-  "plugins": []
-}
-```
-
-每个 `plugins` 项包括：
-
-| 字段 | 内容 |
+| 对象 | 限制 |
 | --- | --- |
-| `id`、`name`、`version`、`description`（可选） | 与安装包 Manifest 一致 |
-| `apiVersion`、`permissions` | `1` 或 `2` 及该 API 允许的实际权限集合 |
-| `downloadUrl` | 本公开仓库的 `releases/download/<tag>/<文件名>.zip` HTTPS 地址 |
-| `sha256` | 安装包字节的 64 位小写十六进制 SHA-256 |
-| `size` | 安装包实际字节数，正整数 |
+| ZIP 与解压后总量 | 各 8 MiB |
+| 文件数量 | 128，包含 Manifest 与 main.js |
+| Manifest | 16 KiB |
+| main.js | 512 KiB |
+| 单个资源 | 4 MiB |
+| 市场目录 | 1 MiB、500 个唯一插件 ID |
 
-原生层仅访问固定目录和支持的 GitHub Release 下载地址；安装请求绑定用户确认时的 id、版本与 SHA-256。包内名称、版本、说明、API 和权限也必须匹配清单。目录或文件在审阅后变化时，需刷新并重新确认。接口定义见 [集成契约](CONTRACT.md)。
+Manifest 支持 API 1／2／3，API 3 使用通用权限，可额外声明 `networkOrigins`，最多 32 个精确 HTTPS 来源。来源只包含协议、主机和可选端口，不含通配符、路径、查询、片段或用户信息。运行期间新增的来源仍需本设备确认。
+
+API 2 专用的打卡／AI 注册入口已退出宿主业务实现；旧包保留在旧目录供旧版 App 使用，新宿主会提示更新到 API 3 插件。API 1 的日期等通用插件继续兼容。
+
+市场版本采用严格语义版本，最多 40 字符：允许 `1.0.0`、`1.0.0-rc.10`，拒绝 `+` 构建标记、数字段前导零和空预发布段。本地历史版本不能严格排序时，不提供市场更新提示。
+
+目录结构仍为 `{schemaVersion:1,updatedAt,plugins}`。每条插件包含 Manifest 字段及 `downloadUrl`、`sha256`、`size`；API 3 的 `networkOrigins` 同样必须与包内一致。原生层只下载指定公开仓库的 Release，并校验大小和 SHA-256，前端再验证包结构与 Manifest。
