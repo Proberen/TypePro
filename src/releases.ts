@@ -5,6 +5,15 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.3.0",
+    changes: [
+      "新增可选 GitHub 同步，首次设备授权后使用专用私有笔记仓库。",
+      "Mac 与 Android 双向同步，支持离线编辑、手动同步与前台定时同步。",
+      "独立文档自动合并，同一文档发生冲突时保留副本，保护同步期间的输入。",
+      "显示最近成功同步时间、更新来源与重试状态；凭据使用系统安全存储。",
+    ],
+  },
+  {
     version: "1.2.2",
     changes: [
       "全部正文块支持拖拽排序、上移、下移与删除，操作可以撤销。",
@@ -59,5 +68,5 @@ export const UPGRADE_NOTES = [
   { title: "更新前", text: "建议先通过“导入 / 导出”导出全部笔记为 ZIP，保留一份备份。" },
   { title: "Mac", text: "退出旧版 TypePro（或“笔记”），打开 DMG，将 TypePro 拖入“应用程序”。新版沿用原有数据目录；旧应用名称不同，可能仍会保留，请使用 TypePro 打开笔记。" },
   { title: "Android", text: "使用相同签名与包名的新版 APK 直接覆盖安装。请勿先卸载旧版，卸载会删除应用内的本地数据。" },
-  { title: "版本兼容", text: "1.2.2 沿用已有笔记与附件。自定义目录配置仅保存在当前 Mac；跨设备请使用 ZIP 导入导出。字体与文字颜色通过内嵌 HTML 保存。" },
+  { title: "版本兼容", text: "1.3.0 沿用已有笔记与附件。GitHub 同步为可选功能，每台设备需首次授权。自定义目录配置与插件仅保存在本机；ZIP 导入导出继续可用。字体与文字颜色通过内嵌 HTML 保存。" },
 ] as const;

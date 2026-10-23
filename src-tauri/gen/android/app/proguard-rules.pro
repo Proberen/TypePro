@@ -22,3 +22,5 @@
 # Tauri registers this app-local plugin and parses its arguments reflectively.
 -keep class com.localnotes.notebook.TransferPlugin { *; }
 -keep class com.localnotes.notebook.TransferArgs { *; }
+-keep class com.localnotes.notebook.GithubSecretsPlugin { *; }
+-keep class com.localnotes.notebook.GithubSecretArgs { *; }

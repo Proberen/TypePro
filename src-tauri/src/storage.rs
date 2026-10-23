@@ -78,6 +78,11 @@ pub struct Asset {
     pub path: String,
     pub url: String,
 }
+#[derive(Clone, Debug)]
+pub struct SyncFile {
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct NotebookLocation {
@@ -171,7 +176,7 @@ fn index_of(workspace: &Workspace) -> Index {
         plugins: workspace.plugins.clone(),
     }
 }
-fn validate(workspace: &Workspace) -> Result<()> {
+pub(crate) fn validate(workspace: &Workspace) -> Result<()> {
     if workspace.version != 1 {
         return Err("不支持的笔记版本".into());
     }
@@ -792,6 +797,92 @@ impl Storage {
         let bytes = self.asset_bytes(reference, &self.locations()?)?;
         Ok(data_uri(name, &bytes))
     }
+    pub fn export_sync_files(&self, workspace: &Workspace) -> Result<Vec<SyncFile>> {
+        validate(workspace)?;
+        let locations = self.locations()?;
+        let mut files = vec![];
+        let mut references = BTreeSet::new();
+        let mut total = 0u64;
+        for notebook in &workspace.notebooks {
+            self.notebook_root(&notebook.id, &locations)?;
+            references.extend(notebook_references(notebook)?);
+            for document in &notebook.documents {
+                total += document.markdown.len() as u64;
+                files.push(SyncFile {
+                    path: document_path(&notebook.id, &document.id),
+                    bytes: document.markdown.as_bytes().to_vec(),
+                });
+            }
+        }
+        if files.len() + references.len() > MAX_FILES {
+            return Err("同步文件数量过多".into());
+        }
+        for reference in references {
+            let name = asset_name(&reference)?;
+            let bytes = self.asset_bytes(&reference, &locations)?;
+            total += bytes.len() as u64;
+            if total > MAX_TOTAL {
+                return Err("同步内容超过 256 MB".into());
+            }
+            files.push(SyncFile {
+                path: format!("assets/{name}"),
+                bytes,
+            });
+        }
+        Ok(files)
+    }
+    pub fn import_sync_assets(&self, files: &[SyncFile]) -> Result<()> {
+        if files.len() > MAX_FILES {
+            return Err("同步附件数量过多".into());
+        }
+        let locations = self.locations()?;
+        let mut roots = vec![self.root.clone()];
+        for notebook in locations.notebooks.keys() {
+            roots.push(self.notebook_root(notebook, &locations)?);
+        }
+        let mut seen = BTreeSet::new();
+        let mut total = 0u64;
+        let mut pending = vec![];
+        // Validate the complete batch, including every external copy, before writing anything.
+        for file in files {
+            let name = file
+                .path
+                .strip_prefix("assets/")
+                .ok_or("无效的同步附件路径")?;
+            asset_name(&format!("../../assets/{name}"))?;
+            total = total
+                .checked_add(file.bytes.len() as u64)
+                .ok_or("同步附件容量溢出")?;
+            if !seen.insert(&file.path) || file.bytes.len() > MAX_ASSET || total > MAX_TOTAL {
+                return Err("同步附件重复或超过容量限制".into());
+            }
+            for root in &roots {
+                let target = checked_path(root, Path::new(&file.path))?;
+                if target.exists() && read_limited(&target, MAX_ASSET)? != file.bytes {
+                    return Err(format!("附件名称冲突，未覆盖原文件：{name}"));
+                }
+            }
+            let target = checked_path(&self.root, Path::new(&file.path))?;
+            if !target.exists() {
+                pending.push((target, &file.bytes));
+            }
+        }
+        for (target, bytes) in pending {
+            let parent = target.parent().ok_or("无效的同步附件目录")?;
+            let temporary = parent.join(format!(".typepro-sync-{}.tmp", id()));
+            atomic_write(&temporary, bytes)?;
+            // Hard-link publication is atomic and create-only: even a file appearing after
+            // preflight is never replaced. Retry will validate that newly existing file.
+            let published = fs::hard_link(&temporary, &target).map_err(err);
+            let _ = fs::remove_file(&temporary);
+            published?;
+            #[cfg(unix)]
+            File::open(parent)
+                .and_then(|directory| directory.sync_all())
+                .map_err(err)?;
+        }
+        Ok(())
+    }
     fn selection(&self, notebook_id: Option<&str>, document_id: Option<&str>) -> Result<Workspace> {
         if document_id.is_some() && notebook_id.is_none() {
             return Err("请先选择笔记本".into());
@@ -1072,6 +1163,214 @@ mod tests {
             }],
             plugins: vec![],
         }
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn sync_export_uses_supplied_markdown_and_external_assets_without_local_metadata() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        let cover = s.save_asset("cover.png", b"cover only").unwrap();
+        let unused = s.save_asset("unused.png", b"unused").unwrap();
+        workspace.notebooks[0].cover = Some(cover.path.clone());
+        workspace.plugins.push(Plugin {
+            manifest: PluginManifest {
+                id: "local-only".into(),
+                name: "本机插件".into(),
+                version: "1.0.0".into(),
+                description: None,
+                api_version: 1,
+                permissions: vec![],
+            },
+            code: "private-plugin-code".into(),
+            enabled: true,
+        });
+        s.save(&workspace).unwrap();
+        let notebook_id = workspace.notebooks[0].id.clone();
+        s.set_notebook_location(&notebook_id, external.path().to_str())
+            .unwrap();
+        let cover_name = asset_name(&cover.path).unwrap();
+        fs::remove_file(s.root.join("assets").join(cover_name)).unwrap();
+        let external_name = format!("{}.png", id());
+        fs::write(
+            external.path().join("assets").join(&external_name),
+            b"external only",
+        )
+        .unwrap();
+        workspace.notebooks[0].documents[0].markdown =
+            format!("# 参数中的新正文\n![图](../../assets/{external_name})");
+        let files = s.export_sync_files(&workspace).unwrap();
+        let files: BTreeMap<_, _> = files
+            .into_iter()
+            .map(|file| (file.path, file.bytes))
+            .collect();
+        assert_eq!(files.len(), 3);
+        let document = &workspace.notebooks[0].documents[0];
+        assert_eq!(
+            files[&document_path(&notebook_id, &document.id)],
+            document.markdown.as_bytes()
+        );
+        assert_eq!(files[&format!("assets/{cover_name}")], b"cover only");
+        assert_eq!(files[&format!("assets/{external_name}")], b"external only");
+        assert!(!files.contains_key(&format!("assets/{}", asset_name(&unused.path).unwrap())));
+        assert!(files
+            .keys()
+            .all(|path| path.starts_with("assets/") || path.starts_with("notebooks/")));
+        assert_ne!(
+            s.load().unwrap().notebooks[0].documents[0].markdown,
+            document.markdown
+        );
+    }
+    #[test]
+    fn sync_export_requires_valid_workspace_and_every_referenced_asset() {
+        let (_dir, s) = store();
+        let mut workspace = sample();
+        workspace.notebooks[0].documents[0].markdown =
+            format!("![missing](../../assets/{}.png)", id());
+        assert!(s
+            .export_sync_files(&workspace)
+            .unwrap_err()
+            .contains("找不到"));
+        workspace.notebooks[0].documents.clear();
+        workspace.notebooks[0].cover = Some(format!("../../assets/{}.png", id()));
+        assert!(s.export_sync_files(&workspace).is_err());
+        workspace.notebooks[0].id = "../escape".into();
+        assert!(s.export_sync_files(&workspace).is_err());
+        assert!(!s.root.join("index.json").exists());
+    }
+    #[test]
+    fn sync_asset_import_preserves_canonical_names_and_repeated_bytes() {
+        let (_dir, s) = store();
+        let files = vec![SyncFile {
+            path: format!("assets/{}.png", id()),
+            bytes: b"portable image".to_vec(),
+        }];
+        s.import_sync_assets(&files).unwrap();
+        s.import_sync_assets(&files).unwrap();
+        assert_eq!(
+            fs::read(s.root.join(&files[0].path)).unwrap(),
+            files[0].bytes
+        );
+        assert!(!s.root.join("index.json").exists());
+        assert!(!s.root.join("locations.json").exists());
+        assert_eq!(fs::read_dir(s.root.join("assets")).unwrap().count(), 1);
+    }
+    #[test]
+    fn sync_asset_import_preflights_paths_duplicates_sizes_and_existing_content() {
+        let (_dir, s) = store();
+        let first = SyncFile {
+            path: format!("assets/{}.png", id()),
+            bytes: b"new".to_vec(),
+        };
+        let asset_id = id();
+        for invalid in [
+            "locations.json".to_string(),
+            "plugins/main.js".into(),
+            format!("notebooks/{asset_id}/{asset_id}.md"),
+            format!("../assets/{asset_id}.png"),
+            format!("/assets/{asset_id}.png"),
+            format!("assets/../{asset_id}.png"),
+            format!("assets/./{asset_id}.png"),
+            format!("assets//{asset_id}.png"),
+            format!("assets\\{asset_id}.png"),
+            format!("assets/{asset_id}.png/extra"),
+            format!("assets/{asset_id}.toolongextension"),
+        ] {
+            let files = vec![
+                first.clone(),
+                SyncFile {
+                    path: invalid,
+                    bytes: b"bad".to_vec(),
+                },
+            ];
+            assert!(s.import_sync_assets(&files).is_err());
+            assert!(!s.root.join(&first.path).exists());
+        }
+        assert!(s
+            .import_sync_assets(&[first.clone(), first.clone()])
+            .is_err());
+        let oversized = SyncFile {
+            path: format!("assets/{}.bin", id()),
+            bytes: vec![0; MAX_ASSET + 1],
+        };
+        assert!(s.import_sync_assets(&[first.clone(), oversized]).is_err());
+        assert!(s
+            .import_sync_assets(&vec![first.clone(); MAX_FILES + 1])
+            .is_err());
+        let existing = SyncFile {
+            path: format!("assets/{}.png", id()),
+            bytes: b"old".to_vec(),
+        };
+        s.import_sync_assets(std::slice::from_ref(&existing))
+            .unwrap();
+        assert!(s
+            .import_sync_assets(&[
+                first.clone(),
+                SyncFile {
+                    bytes: b"different".to_vec(),
+                    ..existing.clone()
+                }
+            ])
+            .is_err());
+        assert!(!s.root.join(&first.path).exists());
+        assert_eq!(
+            fs::read(s.root.join(&existing.path)).unwrap(),
+            existing.bytes
+        );
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn sync_asset_import_checks_custom_directory_even_if_global_copy_matches() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        let asset = s.save_asset("image.png", b"global image").unwrap();
+        workspace.notebooks[0].cover = Some(asset.path.clone());
+        s.save(&workspace).unwrap();
+        s.set_notebook_location(&workspace.notebooks[0].id, external.path().to_str())
+            .unwrap();
+        let name = asset_name(&asset.path).unwrap();
+        let conflict_path = external.path().join("assets").join(name);
+        fs::write(&conflict_path, b"custom image").unwrap();
+        let first = SyncFile {
+            path: format!("assets/{}.png", id()),
+            bytes: b"new".to_vec(),
+        };
+        assert!(s
+            .import_sync_assets(&[
+                first.clone(),
+                SyncFile {
+                    path: format!("assets/{name}"),
+                    bytes: b"global image".to_vec()
+                }
+            ])
+            .is_err());
+        assert!(!s.root.join(&first.path).exists());
+        assert_eq!(fs::read(conflict_path).unwrap(), b"custom image");
+        assert_eq!(
+            fs::read(s.root.join("assets").join(name)).unwrap(),
+            b"global image"
+        );
+    }
+    #[test]
+    #[cfg(unix)]
+    fn sync_asset_import_rejects_symlinks_before_any_file_is_published() {
+        let (_dir, s) = store();
+        let victim = tempfile::NamedTempFile::new().unwrap();
+        fs::write(victim.path(), b"untouched").unwrap();
+        fs::create_dir(s.root.join("assets")).unwrap();
+        let first = SyncFile {
+            path: format!("assets/{}.png", id()),
+            bytes: b"new".to_vec(),
+        };
+        let link = SyncFile {
+            path: format!("assets/{}.png", id()),
+            bytes: b"incoming".to_vec(),
+        };
+        std::os::unix::fs::symlink(victim.path(), s.root.join(&link.path)).unwrap();
+        assert!(s.import_sync_assets(&[first.clone(), link]).is_err());
+        assert!(!s.root.join(&first.path).exists());
+        assert_eq!(fs::read(victim.path()).unwrap(), b"untouched");
     }
     #[test]
     fn document_export_requires_a_valid_notebook_even_in_empty_workspace() {

@@ -1,6 +1,6 @@
 # 构建记录
 
-TypePro 1.2.2（Android versionCode `1002002`）。本次本地构建沿用用户对本任务的依赖安装与构建授权，Mac 与 Android 顺序执行。旧版本检查保留为历史记录，本次检查在文末单列。
+TypePro 1.3.0（Android versionCode `1003000`）。本次本地构建沿用用户对本任务的 DMG／APK 与必要依赖安装授权。旧版本检查保留为历史记录，本次检查在文末单列。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -23,12 +23,12 @@ npm ci
 CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 bash scripts/package-dmg.sh \
   src-tauri/target/release/bundle/macos/TypePro.app \
-  ../../outputs/TypePro-1.2.2-mac-arm64.dmg
+  ../../outputs/TypePro-1.3.0-mac-arm64.dmg
 ```
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.2.2-mac-arm64.dmg`。
+应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.3.0-mac-arm64.dmg`。
 
 ## Android
 
@@ -50,7 +50,7 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.2.2 的 Android versionCode 明确配置为 `1002002`，高于 1.2.1 的 `1002001`；CLI 构建时重新生成 `tauri.properties`。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.3.0 的 Android versionCode 明确配置为 `1003000`，高于 1.2.2 的 `1002002`；CLI 构建时重新生成 `tauri.properties`。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
@@ -64,7 +64,7 @@ APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app
 
 ```sh
 codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
-hdiutil verify TypePro-1.2.2-mac-arm64.dmg
+hdiutil verify TypePro-1.3.0-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```
@@ -143,3 +143,21 @@ hdiutil verify TypePro-1.2.2-mac-arm64.dmg
 | --- | ---: | --- |
 | TypePro-1.2.2-mac-arm64.dmg | 12,533,548 | `7b06799c975602422e8a56032a4fc26de5e355c0e326608c39212bfe4bed18d9` |
 | TypePro-1.2.2-android.apk | 30,483,317 | `fa9c70b4f4759b1337167e9135e87f2151d27af876dbfc3c8131ae13669f1335` |
+
+
+## 1.3.0 GitHub 同步与安装包验收记录（2026-10-21）
+
+- `npx tsc --noEmit --pretty false`、`git diff --check` 通过。同步合并与流程共 25 项测试通过，覆盖字段合并、确定性冲突副本、文档移动、删除冲突、CAS 重试、发布期间继续输入、无变化不提交、下载／保存失败与取消。原生 `cargo test --manifest-path src-tauri/Cargo.toml --lib --offline` 31 项通过，含完整附件收集、跨目录读取、导入附件批次预检、不覆盖不同内容、路径／SHA 与缓存隔离。
+- GitHub App TypePro-Proberen 已注册并安装到 Proberen/typepro-notes（私有），仅选择此仓库；Device flow 已启用。客户端仅内置公共 Client ID 与 slug，没有 App private key、client secret 或用户访问令牌。
+- 独立 Mac QA 标识 `com.localnotes.typepro130qa`，使用空应用数据目录。真实设备授权后连接成功，首次同步在私库创建 `.typepro/manifest.json`，保留已有 README；再次手动同步和重启后自动同步成功，GitHub 历史仍为 2 次提交，未制造无变化提交。验收后通过界面断开并退出 QA；没有上传真实用户笔记，没有替换或启动生产 Mac 应用。
+- 本地浏览器验证首页入口和同步对话框；普通浏览器明确提示需原生应用完成 GitHub 同步。使用内置 CUA IAB／原生应用检查，未额外安装 Browser 插件。未覆盖完整手机原生同步 UI。
+- Ponytail review 仅审查本次差异，去掉同步 hook 中 13 个无必要的回调转发包装；保留定时器使用的 ref，类型检查和 25 项同步测试随后通过。额外核对可选同步初始化失败不阻断本地笔记启动、授权安装阶段可断开连接、凭据不进入前端和笔记数据。
+- 正式 Mac 为 arm64、1.3.0、`com.localnotes.notebook`；严格 codesign 与 hdiutil 校验通过，ad-hoc 签名，未公证。构建提示已有较大前端 chunk，不影响产物生成。
+- Android 为 1.3.0／1003000、minSdk 26、targetSdk 36、ARM64＋ARMv7。apksigner 校验通过，证书 SHA256 与 1.2.2 相同；ZIP 16KB 和 ARM64 ELF 所有 LOAD 段 0x4000 对齐通过。
+- 专用 NotebookTest／Android 16 模拟器沿用原 userdata，从 1.2.2 覆盖安装成功；安装后与启动后，索引哈希、4 本笔记、4 篇文档、3 个附件、1 个启用插件的内容哈希和状态均一致。冷启动返回 Status ok／COLD，45.4 秒内 9 次采样保持同一 PID，crash buffer 无新增，无 fatal／native signal／Rust panic／uncaught／CSP 拒绝。未操作安卓原生界面，AVD 已正常关闭并保留数据。
+- 未实测 Mac↔Android 两台设备的双向离线冲突、Android Keystore 授权后读取、长时间令牌刷新、物理手机或 Android 8；相关合并／重试有程序测试，安全存储与平台分支有源码及构建检查，不将其记作真实设备验收。自动同步限应用前台，后台／关闭不保证定时执行。
+
+| 安装包 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.3.0-mac-arm64.dmg | 13,335,767 | `7b2ec98e3d54d88513e0f7969cd464f35a2784ac68ac7f400699a5bff5fd1d8e` |
+| TypePro-1.3.0-android.apk | 33,583,733 | `419f8ddda1a03011ecb4b07d608962af4c38cb195d2ac2170c75d98eb74624ab` |

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ArrowDownUp, CheckCircle2, ChevronRight, FileText, MoreHorizontal, Notebook, Palette, Plus, Search } from "lucide-react";
+import { ArrowDownUp, CheckCircle2, ChevronRight, FileText, GitBranch, MoreHorizontal, Notebook, Palette, Plus, Search } from "lucide-react";
 import type { Notebook as NotebookData } from "./lib/types";
 import { readRecentDocuments } from "./lib/recent";
 import { NotebookCover } from "./CoverPicker";
@@ -12,6 +12,8 @@ export interface HomeProps {
   onMenu: (bookId: string, anchor: HTMLElement) => void;
   onTheme: () => void;
   onTransfer: () => void;
+  onSync: () => void;
+  syncLabel: string;
   onMore: (anchor: HTMLElement) => void;
 }
 
@@ -27,7 +29,7 @@ function dateLabel(value?: string, short = false) {
   return day ? `${day}${short ? "" : ` ${time}`}` : date.toLocaleDateString("zh-CN", { ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }), month: "long", day: "numeric" });
 }
 
-export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onTransfer, onMore }: HomeProps) {
+export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onTransfer, onSync, syncLabel, onMore }: HomeProps) {
   const [search, setSearch] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const query = search.trim().toLocaleLowerCase();
@@ -42,6 +44,7 @@ export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onT
     <header className="tp-home-header">
       <span className="tp-brand"><img src="/typepro-logo.png" alt="" /><span>TypePro</span></span>
       <div className="tp-header-actions">
+        <button className="tp-icon-button" type="button" aria-label="GitHub 同步" title={syncLabel} onClick={onSync}><GitBranch /></button>
         <button className="tp-icon-button" type="button" aria-label="外观" title="外观" onClick={onTheme}><Palette /></button>
         <button className="tp-icon-button tp-desktop-transfer" type="button" aria-label="导入 / 导出" title="导入 / 导出" onClick={onTransfer}><ArrowDownUp /></button>
         <button className="tp-icon-button" type="button" aria-label="更多" title="更多" onClick={event => onMore(event.currentTarget)}><MoreHorizontal /></button>

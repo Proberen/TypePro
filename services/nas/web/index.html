@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>TypePro NAS</title>
+  <link rel="icon" href="/typepro-logo.png">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="TypePro NAS 首页"><img src="/typepro-logo.png" alt=""><strong>TypePro</strong><span>NAS</span></a>
+    <div class="connection"><span id="connection-status">未连接</span><button id="disconnect" class="text-button" hidden>断开</button></div>
+  </header>
+  <main>
+    <section id="connect-panel" class="connect-panel" aria-labelledby="connect-title">
+      <h1 id="connect-title">连接存储</h1>
+      <form id="connect-form" method="post">
+        <label for="token">访问令牌</label>
+        <div class="connect-field"><input id="token" type="password" required autocomplete="off" spellcheck="false" placeholder="输入 NAS 访问令牌"><button class="button primary" type="submit" id="connect-button">连接</button></div>
+      </form>
+      <p id="connect-error" class="error" role="alert" hidden></p>
+    </section>
+    <section id="notes-panel" aria-labelledby="notes-title" hidden>
+      <div class="page-heading">
+        <h1 id="notes-title">笔记</h1>
+        <div class="tools"><label class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4 4"/></svg><input id="search" type="search" placeholder="搜索笔记或文档" aria-label="搜索笔记或文档"></label><button id="refresh" class="button secondary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 18 17"/></svg><span>刷新</span></button></div>
+      </div>
+      <p id="page-error" class="error page-error" role="alert" hidden></p>
+      <div class="table-scroll"><table><caption class="sr-only">笔记和文档的更新时间、同步时间及更新来源</caption><thead><tr><th scope="col">笔记</th><th scope="col">内容更新时间</th><th scope="col">同步时间</th><th scope="col">更新源</th></tr></thead><tbody id="notes"></tbody></table></div>
+      <div id="empty" class="empty" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5zM9 9h6M9 13h6M9 17h3"/></svg><h2 id="empty-title">暂无笔记</h2><p id="empty-copy">设备上传后会显示在这里</p></div>
+      <footer><span id="count"></span><span><span id="last-refresh"></span><span id="version">0.1.0</span></span></footer>
+    </section>
+  </main>
+  <p id="announcement" class="sr-only" role="status" aria-live="polite"></p>
+</body>
+</html>

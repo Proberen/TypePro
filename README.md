@@ -1,4 +1,4 @@
-# TypePro 1.2.2
+# TypePro 1.3.0
 
 本地 Markdown 笔记软件。Apple Silicon Mac 与 Android 共用编辑器和插件 API，使用系统 WebView，不捆绑 Chromium。
 
@@ -15,6 +15,7 @@
 - 选中图片后拖动四角等比缩放，最大宽度不超过正文；尺寸用 HTML 图片标签保存到 Markdown，重新打开和阅读时保留。行内样式与链接随所在段落移动。
 - 自动保存到本机。桌面 `⌘S` 立即保存，`⌘N` 在首页新建笔记、在编辑页新建文档；更多 Typora 风格操作见应用内「键盘快捷键」。底部显示保存状态。
 - 从「导入 / 导出」导入 `.md`、`.markdown` 或本应用的 ZIP。导出范围可选全部、当前笔记本或当前文档；跨设备迁移使用 ZIP，可携带图片附件。单独导出 Markdown 不携带附件。
+- 可选「GitHub 同步」：每台设备首次通过 GitHub 设备授权，笔记与图片同步到账号下的私有 `typepro-notes` 仓库。默认前台每 5 分钟同步，可改为仅手动；离线编辑继续保存在本机。同文档冲突保留副本。内置 GitHub App 仅供 `Proberen` 账号使用；连接步骤、权限与其他账号配置见 [GitHub 同步](docs/GITHUB.md)。
 - 在「关于 TypePro」查看版本号、更新记录及升级说明。
 - 在「插件」导入 ZIP 或 JSON 插件，确认权限后启用。示例与 API 见 [插件文档](docs/PLUGINS.md)。
 
@@ -30,7 +31,7 @@ Markdown 支持标题、段落、引用、列表、任务列表、表格、代�
 ~/Library/Application Support/com.localnotes.notebook/workspace/
 ```
 
-Android 数据保存在应用私有目录，通过系统文件选择器导入导出，无需整个存储空间访问权限。没有账号、同步服务或应用自有遥测。卸载 Android 应用会删除应用私有数据，请先导出需要保留的笔记。
+Android 数据保存在应用私有目录，通过系统文件选择器导入导出，无需整个存储空间访问权限。默认仅使用本地存储，无需 TypePro 账号，没有应用自有遥测；启用 GitHub 同步才需要首次授权 GitHub。卸载 Android 应用会删除应用私有数据，请先导出或确认需要保留的笔记已同步。
 
 ```text
 workspace/
@@ -43,7 +44,9 @@ workspace/
 
 Mac 新建笔记或「存储目录」中可为每本笔记选择独立的空文件夹，支持迁移与回到默认目录。每个目录含 `notebooks/<id>/<doc>.md` 和 `assets/`，保留 Markdown 的相对图片引用。迁移不删除旧文件；绝对路径仅记在本机 `locations.json`，不会写入 ZIP。手机版不提供自定义目录。
 
-TypePro 1.2.2 沿用原「笔记」应用的标识和数据目录。Android 沿用原签名密钥与包名，覆盖安装保留原有笔记。
+GitHub 同步只包含笔记分组、文档、封面及正文引用的本地附件。插件代码和授权、自定义目录的绝对路径、主题、折叠等界面状态留在本机。两端各自选择存储位置，Markdown 的相对附件引用保持不变。同步凭据由原生层保存在 macOS 钥匙串或 Android Keystore 保护的加密存储中，不写入笔记仓库、ZIP 或浏览器存储。断开连接保留本地笔记与远端仓库。
+
+TypePro 1.3.0 沿用原「笔记」应用的标识和数据目录。Android 沿用原签名密钥与包名，覆盖安装保留原有笔记。
 
 ## 开发与构建
 
@@ -71,12 +74,15 @@ Android 签名环境变量和原生存储实现见 [原生说明](src-tauri/READ
 npx tsc -b --pretty false
 node --experimental-strip-types --test src/editor/editor.test.mjs src/editor/code-editor*.test.mjs src/flow/flow.test.mjs
 node --experimental-strip-types --test src/editor/code-format/*.test.mjs
+node --experimental-strip-types --test src/sync/merge.test.mjs
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-上述命令分别检查类型、Markdown 原文保留、选区／样式／折叠契约与流程图转换、原生存储和导入导出。实际界面、系统文件选择器和平台 WebView 验证结果见交付目录的「安装与使用.md」。
+上述命令分别检查类型、Markdown 原文保留、选区／样式／折叠契约与流程图转换、同步合并及格式校验、原生存储和导入导出。命令列表不代表本次均已执行；实际构建、界面、系统文件选择器、平台 WebView 和真实 GitHub 授权验证结果以对应交付记录为准。
 
 ## 目录
+
+独立 NAS 服务开发目录为 [services/nas](services/nas/README.md)，提供 Docker 部署和网页同步记录列表，当前 App 尚未接入该服务。1.3.0 的可选云端同步使用 GitHub。
 
 | 路径 | 职责 |
 | --- | --- |
@@ -85,9 +91,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 | `src/editor/` | 编辑／阅读、原文保留、本地图片与 Markdown 渲染 |
 | `src/editor/code-format/` | 离线代码格式化、后台 worker 与按需加载引擎 |
 | `src/flow/` | 流程图绘制、Mermaid 解析与本地预览 |
+| `src/sync/` | GitHub 同步设置、前台调度、三方合并与远端模型校验 |
 | `src/plugins/`、`public/plugins/` | 插件安装、权限、沙箱和宿主 API |
 | `src-tauri/src/` | 本地文件、恢复日志、导入导出、平台桥接 |
+| `src-tauri/src/github/` | GitHub 设备授权、专用私库校验、Git 数据接口与同步基线 |
+| `src-tauri/src/github_secrets.rs` | macOS 钥匙串与 Android 安全凭据桥接 |
 | `src-tauri/gen/android/` | Android 原生工程 |
+| `docs/GITHUB.md`、`docs/CONTRACT.md` | GitHub 使用与限制、共享数据及原生接口契约 |
 | `examples/` | 可安装的日期与字数示例插件 |
 
 `public/vendor/` 为构建前从已安装 Vditor 依赖复制的离线资源，不需提交。源代码压缩包不包含依赖目录、编译缓存、签名密钥或本机笔记。

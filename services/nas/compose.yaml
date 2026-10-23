@@ -1,0 +1,30 @@
+name: typepro-nas
+services:
+  typepro:
+    build: .
+    image: typepro-nas:0.1.0
+    restart: unless-stopped
+    environment:
+      TYPEPRO_TOKEN: ${TYPEPRO_TOKEN:?请先运行 setup.sh 生成 .env}
+      TYPEPRO_PUBLIC_URL: ${TYPEPRO_PUBLIC_URL:-}
+    ports:
+      - "${TYPEPRO_BIND_IP:-127.0.0.1}:${TYPEPRO_PORT:-17890}:8080"
+    volumes:
+      - data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    name: ${TYPEPRO_VOLUME_NAME:-typepro-nas-data}

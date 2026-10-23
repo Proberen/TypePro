@@ -1,0 +1,63 @@
+.github-sync { color: var(--text); font-size: 13px; }
+.github-sync-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 25px; min-width: 0; }
+.github-sync-mark { width: 46px; height: 46px; display: grid; place-items: center; flex: none; background: var(--accent-wash); color: var(--accent-text); border-radius: 12px; }
+.github-sync-heading > div { min-width: 0; flex: 1; }
+.github-sync-heading h3 { font-size: 16px; font-weight: 580; overflow-wrap: anywhere; }
+.github-sync-heading p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.65; }
+.github-sync-private { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 5px 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); font-size: 10px; }
+.github-sync-disclosure { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 0 12px; font-size: 12px; color: var(--body-text); }
+.github-sync-disclosure svg { transition: transform .15s; }
+.github-sync-rotated { transform: rotate(180deg); }
+.github-sync-app-settings { padding-top: 4px; border-top: 1px solid var(--border); }
+.github-sync-field { display: flex; flex-direction: column; gap: 9px; min-width: 0; font-size: 12px; line-height: 1.4; color: var(--body-text); }
+.github-sync-field + .github-sync-field { margin-top: 17px; }
+.github-sync-app-settings .github-sync-field { margin-top: 16px; }
+.github-sync-field input, .github-sync-field select { display: block; width: 100%; min-width: 0; min-height: 41px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); padding: 9px 11px; font-size: 13px; color: var(--text); }
+.github-sync-field input:focus, .github-sync-field select:focus { outline: 2px solid var(--accent-wash); outline-offset: 1px; border-color: var(--accent-ring); }
+.github-sync-field input::placeholder { color: var(--muted); }
+.github-sync-link { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-text); font-size: 12px; padding: 0; line-height: 1.6; }
+.github-sync-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.github-sync-app-settings > .github-sync-link { margin-top: 14px; }
+.github-sync-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 23px; }
+.github-sync-authorization { text-align: center; padding: 3px 0 0; }
+.github-sync h4 { font-size: 14px; font-weight: 550; margin: 0; }
+.github-sync-code { display: block; margin-top: 21px; padding: 19px 12px; border: 1px solid var(--accent-ring); background: var(--accent-wash); border-radius: 8px; color: var(--accent-text); font: 600 26px/1.2 "SFMono-Regular", Consolas, monospace; letter-spacing: 4px; user-select: all; overflow-wrap: anywhere; }
+.github-sync-caption { font-size: 11px; line-height: 1.6; color: var(--muted); margin-top: 11px; }
+.github-sync-authorization > .btn { margin-top: 22px; }
+.github-sync-waiting { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 15px; font-size: 11px; color: var(--muted); }
+.github-sync-cancel { margin-top: 18px; color: var(--muted); }
+.github-sync-installation > p { margin-top: 11px; color: var(--muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.github-sync-installation strong { color: var(--body-text); font-weight: 500; }
+.github-sync-connection { padding: 0 0 20px; border-bottom: 1px solid var(--border); }
+.github-sync-status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--accent-text); line-height: 1.6; }
+.github-sync-status-offline { color: var(--muted); }
+.github-sync-status-error { color: var(--danger); }
+.github-sync-details { display: grid; gap: 12px; margin: 20px 0 0; font-size: 12px; }
+.github-sync-details > div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 16px; }
+.github-sync-details dt { color: var(--muted); }
+.github-sync-details dd { margin: 0; color: var(--body-text); overflow-wrap: anywhere; }
+.github-sync-preferences { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 22px; }
+.github-sync-preferences .github-sync-field { margin-top: 0; }
+.github-sync-conflicts { display: flex; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 7px; margin-top: 20px; font-size: 12px; color: var(--body-text); line-height: 1.6; }
+.github-sync-conflicts svg { color: var(--accent-text); }
+.github-sync-error { display: flex; align-items: flex-start; gap: 8px; margin-top: 18px; padding: 12px; border: 1px solid color-mix(in srgb, var(--danger) 25%, var(--border)); border-radius: 7px; background: color-mix(in srgb, var(--danger) 4%, var(--panel)); color: var(--danger); font-size: 12px; line-height: 1.7; }
+.github-sync-error > svg { margin-top: 2px; }
+.github-sync-error p { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.github-sync-error button { flex: none; padding: 0; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; line-height: 1.7; }
+.github-sync-notice { margin-top: 16px; font-size: 12px; color: var(--body-text); line-height: 1.7; overflow-wrap: anywhere; }
+.github-sync-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin: 24px -24px 0; padding: 16px 24px; border-top: 1px solid var(--border); }
+.github-sync-disconnect { margin-right: auto; padding: 8px 0; color: var(--muted); font-size: 12px; }
+.github-sync-disconnect:hover { color: var(--danger); }
+.github-sync-spin { animation: github-sync-spin 1s linear infinite; }
+@keyframes github-sync-spin { to { transform: rotate(360deg); } }
+@media (max-width: 700px) {
+  .github-sync-footer { margin-left: -20px; margin-right: -20px; padding: 14px 20px; }
+  .github-sync-field input, .github-sync-field select { min-height: 43px; }
+  .github-sync-actions .btn { min-height: 40px; }
+}
+@media (max-width: 390px) {
+  .github-sync-preferences { grid-template-columns: minmax(0, 1fr); gap: 17px; }
+  .github-sync-installation .github-sync-actions .btn { width: 100%; }
+  .github-sync-code { font-size: 22px; letter-spacing: 3px; }
+  .github-sync-details > div { grid-template-columns: 62px minmax(0, 1fr); gap: 10px; }
+}

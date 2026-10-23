@@ -1,0 +1,22 @@
+{
+  "version": "0.1.0",
+  "builtOn": "2026-10-21",
+  "archives": [
+    {
+      "file": "TypePro-NAS-0.1.0-linux-amd64.tar",
+      "platform": "linux/amd64",
+      "tag": "typepro-nas:0.1.0",
+      "bytes": 49693184,
+      "sha256": "28838dae0b12460f05baa0267ef73d49afd398c62c57ec4fec7ea8c7c8c4855a",
+      "configDigest": "sha256:b443c58cbdf724bb10d3d3062b0c5d8ba85cbab4d46b6badf0a743d25c75e498"
+    },
+    {
+      "file": "TypePro-NAS-0.1.0-linux-arm64.tar",
+      "platform": "linux/arm64",
+      "tag": "typepro-nas:0.1.0",
+      "bytes": 49224192,
+      "sha256": "7f30f23951e8f08ce20bd6cc8499c0e047a350f8a88f0bdd6ce39c038ee8038a",
+      "configDigest": "sha256:b66fd4bd9db302002427ef92a4e4eb60591a10978d28a5b8719879c0087dd391"
+    }
+  ]
+}

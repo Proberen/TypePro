@@ -22,8 +22,8 @@ android {
         applicationId = "com.localnotes.notebook"
         minSdk = 26
         targetSdk = 36
-        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1002002").toInt()
-        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.2.2")
+        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1003000").toInt()
+        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.3.0")
     }
     signingConfigs {
         create("personalRelease") {

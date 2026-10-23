@@ -1,0 +1,32 @@
+name: typepro-nas
+services:
+  typepro:
+    image: typepro-nas:0.1.0
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      # 填入密码管理器生成的至少 32 位随机英文字母和数字；不要保留空值。
+      TYPEPRO_TOKEN: ""
+      # UGREENlink 网页列表访问保持留空，无需填写 ug.link 地址。
+      TYPEPRO_PUBLIC_URL: ""
+    ports:
+      - "17890:8080"
+    volumes:
+      - data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    name: typepro-nas-data

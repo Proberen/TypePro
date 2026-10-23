@@ -1,9 +1,22 @@
+mod github;
+mod github_secrets;
 mod storage;
 mod transfer;
+use github::{
+    Authorization, AuthorizationPoll, Github, GithubStatus, PublishResult, ReadRemoteResult,
+    RepositoryPreparation, SyncSnapshot, SyncWorkspace,
+};
 use std::sync::Mutex;
 use storage::{Asset, NotebookLocation, Storage, TransferFile, Workspace};
-use tauri::{Manager, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 struct Store(Mutex<Storage>);
+// Optional sync initialization must never prevent access to local notebooks.
+struct GithubService(Result<Github, String>);
+impl GithubService {
+    fn get(&self) -> Response<&Github> {
+        self.0.as_ref().map_err(Clone::clone)
+    }
+}
 type Response<T> = Result<T, String>;
 fn access<T>(
     window: &WebviewWindow,
@@ -107,6 +120,129 @@ async fn set_notebook_location(
         s.set_notebook_location(&notebook_id, path.as_deref())
     })
 }
+fn github_access(window: &WebviewWindow) -> Response<()> {
+    if window.label() != "main" {
+        return Err("窗口无权访问同步".into());
+    }
+    Ok(())
+}
+#[tauri::command]
+async fn github_status(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+) -> Response<GithubStatus> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.status(&app).await
+}
+#[tauri::command]
+async fn github_configure(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+    client_id: String,
+    app_slug: String,
+    interval_minutes: u16,
+    device_name: String,
+) -> Response<GithubStatus> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github
+        .configure(&app, client_id, app_slug, interval_minutes, device_name)
+        .await
+}
+#[tauri::command]
+async fn github_start_authorization(
+    window: WebviewWindow,
+    github: State<'_, GithubService>,
+) -> Response<Authorization> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.start_authorization().await
+}
+#[tauri::command]
+async fn github_poll_authorization(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+) -> Response<AuthorizationPoll> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.poll_authorization(&app).await
+}
+#[tauri::command]
+async fn github_cancel_authorization(
+    window: WebviewWindow,
+    github: State<'_, GithubService>,
+) -> Response<()> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.cancel_authorization().await;
+    Ok(())
+}
+#[tauri::command]
+async fn github_prepare_repository(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+) -> Response<RepositoryPreparation> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.prepare_repository(&app).await
+}
+#[tauri::command]
+async fn github_read_remote(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+    store: State<'_, Store>,
+) -> Response<ReadRemoteResult> {
+    github_access(&window)?;
+    let github = github.get()?;
+    let read = github.read_remote(&app).await?;
+    // Storage access is brief and synchronous; never keep its lock over network awaits.
+    access(&window, &store, |s| s.import_sync_assets(&read.assets))?;
+    Ok(read.wire)
+}
+#[tauri::command]
+async fn github_publish(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+    store: State<'_, Store>,
+    expected_head: String,
+    workspace: SyncWorkspace,
+) -> Response<PublishResult> {
+    github_access(&window)?;
+    let github = github.get()?;
+    let files = access(&window, &store, |s| {
+        s.export_sync_files(&workspace.as_workspace())
+    })?;
+    github.publish(&app, expected_head, workspace, files).await
+}
+#[tauri::command]
+async fn github_checkpoint(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+    head: String,
+    snapshot: SyncSnapshot,
+) -> Response<()> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.checkpoint(&app, head, snapshot).await
+}
+#[tauri::command]
+async fn github_disconnect(
+    window: WebviewWindow,
+    app: AppHandle,
+    github: State<'_, GithubService>,
+) -> Response<GithubStatus> {
+    github_access(&window)?;
+    let github = github.get()?;
+    github.disconnect(&app).await
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -114,13 +250,26 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(transfer::init())
+        .plugin(github_secrets::init())
         .setup(|app| {
-            let root = app.path().app_data_dir()?.join("workspace");
+            let data = app.path().app_data_dir()?;
+            app.manage(GithubService(Github::new(data.join("github-sync"))));
+            let root = data.join("workspace");
             std::fs::create_dir_all(&root)?;
             app.manage(Store(Mutex::new(Storage::new(root))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            github_status,
+            github_configure,
+            github_start_authorization,
+            github_poll_authorization,
+            github_cancel_authorization,
+            github_prepare_repository,
+            github_read_remote,
+            github_publish,
+            github_checkpoint,
+            github_disconnect,
             load_workspace,
             save_workspace,
             import_bundle,
