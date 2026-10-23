@@ -1,13 +1,16 @@
 import { useId, useState } from "react";
 import { version } from "../package.json";
 import { RELEASES, UPGRADE_NOTES } from "./releases";
+import UpdateSection from "./updates/UpdateSection";
+import type { AppUpdatesController } from "./updates/types";
 import "./appearance.css";
 
-export default function About({ onClose }: { onClose: () => void }) {
+export default function About({ onClose, updates }: { onClose: () => void; updates: AppUpdatesController }) {
   const [tab, setTab] = useState<"releases" | "upgrade">("releases");
   const id = useId();
   return <section className="tp-about" aria-label="关于 TypePro">
     <div className="tp-about-brand"><img src="/typepro-logo.png" alt="" /><div><strong>TypePro</strong><span>版本 {version}</span></div></div>
+    <UpdateSection updates={updates} />
     <div className="tp-about-tabs" role="tablist" aria-label="版本信息" onKeyDown={event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();

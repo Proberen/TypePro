@@ -1,0 +1,21 @@
+.tp-app-update { padding: 15px; margin: 0 0 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--side); }
+.tp-app-update-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.tp-app-update-row strong { display: block; font-size: 12px; font-weight: 550; color: var(--text); }
+.tp-app-update-row span { display: block; margin-top: 6px; font-size: 11px; color: var(--muted); }
+.tp-app-update .tp-button { min-height: 32px; padding: 7px 11px; font-size: 11px; white-space: nowrap; gap: 6px; }
+.tp-app-update .tp-button:disabled { opacity: .55; cursor: default; }
+.tp-app-update-error { font-size: 11px; line-height: 1.7; color: var(--danger); margin: 10px 0 0; overflow-wrap: anywhere; }
+.tp-app-update-notes { margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px; }
+.tp-app-update-notes summary { color: var(--body-text); font-size: 11px; cursor: pointer; }
+.tp-app-update-notes > div { margin-top: 10px; max-height: 165px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--body-text); font-size: 11px; line-height: 1.8; scrollbar-width: thin; }
+.tp-app-update-download { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.tp-app-update-download > span { font-size: 10px; color: var(--muted); }
+.tp-app-update-notice { position: fixed; right: 20px; bottom: 48px; z-index: 85; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 10px 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; box-shadow: var(--shadow); color: var(--text); font-size: 12px; }
+.tp-app-update-notice > svg { flex: none; color: var(--accent-text); }
+.tp-app-update-link { font-size: 11px; color: var(--accent-text); white-space: nowrap; padding: 5px 3px; }
+.tp-app-update-notice .icon-button { flex: none; width: 27px; height: 27px; }
+@media (max-width: 700px) {
+  .tp-app-update-notice { bottom: 115px; right: 16px; font-size: 11px; gap: 7px; }
+  .tp-app-update { padding: 12px; }
+  .tp-app-update-row { gap: 8px; }
+}

@@ -1,9 +1,10 @@
-# Integration contract (2026-10-22)
+# Integration contract (2026-10-23)
 
-Product: TypePro 1.6.0 source. Tauri 2 + React + Vditor. Mac arm64; Android minSdk 26, arm64 and ARMv7 when practical. Local-first; optional GitHub synchronization uses GitHub's device authorization, with no TypePro identity service. The public plugin market is independent of note synchronization and requires no login. Shared TypeScript models: src/lib/types.ts, camelCase JSON. This revision describes source contracts; it does not claim a 1.6.0 binary build, plugin publication or runtime acceptance.
+Product: TypePro 1.7.3 source. Tauri 2 + React + Vditor. Mac arm64; Android minSdk 26, arm64 and ARMv7 when practical. Local-first; optional GitHub synchronization uses GitHub's device authorization, with no TypePro identity service. The public plugin market is independent of note synchronization and requires no login. Shared TypeScript models: src/lib/types.ts, camelCase JSON. This revision describes source contracts; build and runtime acceptance are documented separately in [BUILD.md](BUILD.md).
 
 Native commands (camelCase JS arguments; Rust snake_case params):
 
+- app_check_updates() -> {currentVersion:string,platform:"mac-arm64"|"android"|null,update:AppUpdate|null}. Main window only; fixed public TypePro Releases, no credentials. Select the highest newer stable version with an exact platform asset; never install or modify the filesystem. Scheduling, response fields and release naming are defined in [UPDATES.md](UPDATES.md).
 - load_workspace() -> Workspace (empty initially; no seeded personal notes).
 - save_workspace({workspace: Workspace}) -> void. Serialize writes, validate UUID ids, write Markdown files and atomic index, do not erase data on parse/I/O failure. Each document is notebooks/<notebookId>/<documentId>.md. Plugins can be in separate local records. Root frontend serializes saves.
 - import_bundle({name:string, bytes:number[], notebookId:string|null}) -> Workspace. Accept .md/.markdown or our portable ZIP. Import into indicated notebook for .md, create an Imported notebook when absent. ZIP preserves notebook grouping. New ids and duplicate names preserve both existing/imported data. Filesystem paths and zip bomb limits must be checked. Save merged state, return it.

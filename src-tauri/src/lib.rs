@@ -1,4 +1,5 @@
 mod github;
+mod app_updates;
 mod github_secrets;
 mod plugin_market;
 mod storage;
@@ -16,6 +17,7 @@ struct Store(Mutex<Storage>);
 // Optional sync initialization must never prevent access to local notebooks.
 struct GithubService(Result<Github, String>);
 struct PluginMarketService(Result<plugin_market::Market, String>);
+struct AppUpdateService(Result<app_updates::Updater, String>);
 impl GithubService {
     fn get(&self) -> Response<&Github> {
         self.0.as_ref().map_err(Clone::clone)
@@ -280,6 +282,16 @@ async fn plugin_market_restore(window: WebviewWindow, market: State<'_, PluginMa
     if window.label() != "main" { return Err("窗口无权恢复插件".into()); }
     market.0.as_ref().map_err(Clone::clone)?.restore(entry).await
 }
+#[tauri::command]
+async fn app_check_updates(
+    window: WebviewWindow,
+    updater: State<'_, AppUpdateService>,
+) -> Response<app_updates::UpdateCheck> {
+    if window.label() != "main" {
+        return Err("窗口无权检查应用更新".into());
+    }
+    updater.0.as_ref().map_err(Clone::clone)?.check().await
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -294,12 +306,14 @@ pub fn run() {
             let data = app.path().app_data_dir()?;
             app.manage(GithubService(Github::new(data.join("github-sync"))));
             app.manage(PluginMarketService(plugin_market::Market::new()));
+            app.manage(AppUpdateService(app_updates::Updater::new()));
             let root = data.join("workspace");
             std::fs::create_dir_all(&root)?;
             app.manage(Store(Mutex::new(Storage::new(root))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_check_updates,
             plugin_market_catalog,
             plugin_market_download,
             plugin_market_restore,

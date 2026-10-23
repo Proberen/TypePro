@@ -4,6 +4,7 @@
 
 | 版本 | Mac（Apple Silicon） | Android | 源码 |
 | --- | --- | --- | --- |
+| [1.7.3](https://github.com/Proberen/TypePro/releases/tag/v1.7.3) | DMG | APK | 标签与源码 ZIP |
 | [1.7.2](https://github.com/Proberen/TypePro/releases/tag/v1.7.2) | DMG | APK | 标签与原始 ZIP |
 | [1.7.1](https://github.com/Proberen/TypePro/releases/tag/v1.7.1) | DMG | APK | 标签与原始 ZIP |
 | [1.7.0](https://github.com/Proberen/TypePro/releases/tag/v1.7.0) | DMG | APK | 标签与原始 ZIP |
@@ -27,9 +28,9 @@
 
 ## 归档来源
 
-2026-10-23 从 14 份已交付源码 ZIP 导入版本快照，保留每版源文件内容，另加根目录 MIT 许可证，ZIP 内部的 `SOURCE_MANIFEST.sha256` 不写入 Git 树。导入提交时间是归档时间，不代表原开发时间。最新分支另补充下载入口、版本索引、忽略规则和许可证元数据，没有修改应用业务代码。
+2026-10-23 从 14 份已交付源码 ZIP 导入 1.0.0 至 1.7.2 的版本快照，保留每版源文件内容，另加根目录 MIT 许可证，ZIP 内部的 `SOURCE_MANIFEST.sha256` 不写入 Git 树。导入提交时间是归档时间，不代表原开发时间。开源归档提交另补充下载入口、版本索引、忽略规则和许可证元数据，没有修改当时的应用业务代码；1.7.3 起继续以正常源码提交维护。
 
-Release 的 `source.zip` 是原始交付附件，字节及内部文件清单保持不变；GitHub 自动提供的标签源码包则包含仓库里的 MIT 许可证和归档元数据。仓库作者的代码按 MIT 授权，第三方依赖按其原许可证使用。归档不表示已重新构建或验证全部旧版本。
+1.0.0 至 1.7.2 Release 的 `source.zip` 是原始交付附件，字节及内部文件清单保持不变；GitHub 自动提供的标签源码包则包含仓库里的 MIT 许可证和归档元数据。1.7.3 起的源码 ZIP 与发布标签逐文件核对。仓库作者的代码按 MIT 授权，第三方依赖按其原许可证使用。归档不表示已重新构建或验证全部旧版本。
 
 应用、NAS 服务及示例源码在本仓库；独立插件、SDK 和市场发布流程在 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins)。插件版本与 App 版本独立。
 

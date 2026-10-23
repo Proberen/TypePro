@@ -5,6 +5,14 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.7.3",
+    changes: [
+      "新增 GitHub 版本检查：启动时检查、前台每天检查，并支持在关于页面手动检查。",
+      "发现当前平台的新正式版时显示轻提示、升级说明及 Mac DMG／Android APK 下载入口。",
+      "安装包由系统浏览器下载，保留手动安装方式，不自动覆盖应用。",
+    ],
+  },
+  {
     version: "1.7.2",
     changes: [
       "修复输入列表前缀后按空格、尚未继续输入时的光标行位置。",
