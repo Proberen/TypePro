@@ -66,6 +66,9 @@ export function runListEditingTests({ document: doc, lute, installListEditing, d
       assert(event.defaultPrevented && api.operations === 1, 'prefix should be one structure change');
       assert(list.tagName === tag && list.getAttribute('type') === type, 'wrong list type');
       assert(list.children.length === 1 && list.firstElementChild.tagName === 'LI', 'missing first item');
+      const current = list.firstElementChild;
+      assert(current.querySelector('br'), 'empty list needs a real caret line before typing resumes');
+      assert(current.contains(view.getSelection().anchorNode), 'caret left the new list item');
     }));
   }
   check('decimal prefix preserves explicit start number', () => typing('8.', api => {
@@ -131,11 +134,21 @@ export function runListEditingTests({ document: doc, lute, installListEditing, d
     api.key('Backspace');
     assert(continuation.parentElement === api.field && api.field.contains(parent), 'further Backspace should lift paragraph, not parent content');
   }));
-  check('empty item Enter exits current nested list without pending indent', () => fixture('- parent\n  - child\n', api => {
+  check('empty nested Enter outdents the existing item and preserves its marker', () => fixture('- parent\n  - child\n', api => {
     api.text('child'); api.key('Enter'); api.key('Enter');
-    const parent = api.field.querySelector(':scope > ul > li');
-    assert(parent.querySelector(':scope > p') && !api.field.querySelector('[data-typepro-list-exit]'), 'empty Enter did not exit');
+    const list = api.field.firstElementChild, parent = list.firstElementChild;
+    assert(list.children.length === 2 && list.lastElementChild.tagName === 'LI', 'empty Enter should retain a list item one level up');
+    assert(list.lastElementChild.querySelector('br') && !parent.querySelector(':scope > p') && !api.field.querySelector('[data-typepro-list-exit]'), 'empty Enter inserted a paragraph or lost its caret line');
     assert(parent.textContent.includes('parent') && parent.textContent.includes('child'), 'existing content lost');
+  }));
+  check('repeated empty Enter reduces one level per press and then unlists on the same item', () => fixture('1. parent\n   1. child\n', api => {
+    api.text('child'); api.key('Enter');
+    const current = api.field.querySelector('ol ol').lastElementChild;
+    api.key('Enter');
+    assert(api.field.firstElementChild.lastElementChild === current && api.field.querySelectorAll('li').length === 3, 'outdent rebuilt the empty item or created a new row');
+    api.key('Enter');
+    assert(api.field.children.length === 2 && api.field.lastElementChild.tagName === 'P', 'outer empty item should become an ordinary paragraph');
+    assert(api.field.lastElementChild.querySelector('br') && api.field.querySelectorAll('li').length === 2, 'top-level exit created an extra blank row');
   }));
   check('top-level empty marker becomes normal paragraph', () => fixture('1. first\n', api => {
     api.text('first'); api.key('Enter'); api.key('Backspace');

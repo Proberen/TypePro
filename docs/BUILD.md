@@ -1,5 +1,23 @@
 # 构建记录
 
+## 1.7.2 列表光标与原行缩进返修（2026-10-23）
+
+本次为用户“落地打包”交付后的返修，用户确认问题发生在 Mac，并确认空项 Enter 应原行减少一级缩进。版本为 1.7.2／Android `1007002`，包名、签名继承、插件 API 和同步格式未变。
+
+- 根因：前缀转换生成无 BR 的空段落，没有可编辑的行内光标锚点；空项 Enter 原先改为父列表内段落；编辑态列表底边距 24px 与列表项 6px 间距不一致，退出时额外下移 18px。
+- 修复：复用既有空段落补位、列表 outdent 和 unlist 能力。空嵌套项 Enter 直接在原行减少一级并保留符号，最外层空项原行取消符号；有内容时 Enter 续项。编辑态列表底间距与列表项保持 6px，阅读态不变。
+- 前端类型检查与生产构建、Mac／Android release 构建通过，未安装依赖。原生浏览器 DOM／Lute 检查存储 14/14、编辑 24/24；最终 App 资源在隔离 Chrome 中 5/5 通过，无相关控制台异常。
+- 独立非持久 Mac WKWebView 使用最终 App 资源、合成存储及实际 Cocoa keyDown/keyUp 完成 5/5 检查（含三种前缀空格暂停／继续、有内容 Enter 与 Command+Z、空嵌套／外层 Enter）。空 BR 行框与输入后 DOM caret 行框均 y187／h20；嵌套 Enter 垂直差 0、水平减少 28px；外层取消符号垂直差 0、水平减少 25px。离屏未激活窗口无法可靠捕获闪烁系统光标，NSTextInputClient firstRect 也返回零矩形，因此未把系统光标像素坐标视为已验证。
+- Mac：1.7.2、arm64、`com.localnotes.notebook`，严格签名与 DMG 校验通过；只读挂载后核对最终应用、图标和 Applications 链接。ad-hoc 签名、未公证。
+- Android：1.7.2／1007002，ARM64＋ARMv7，minSdk26／targetSdk36；签名证书与 1.7.1 相同，CRC、ZIP 16 KiB、ARM64 ELF 对齐与本轮原生载荷一致性通过。
+- 本轮 Ponytail `ponytail-review` 复核：`Lean already. Ship.`；移除了 Enter 退出路径撤销后只剩 true 单一调用的冗余 pending 参数，退格语义不变。未提交、推送或发布插件。
+- 证据位于 `work/typepro-172-review/` 与本版交付验收目录。隔离浏览器、WK 窗口和静态服务均已关闭。未操作生产笔记、启动已安装 TypePro 或验证安卓实机／输入法与双设备联网同步。
+
+| 产物 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.7.2-mac-arm64.dmg | 13458925 | `8ed86288c920ba1e26571d26e83229e3338610ef1f9d5a6f1f212c49a2d4d26d` |
+| TypePro-1.7.2-android.apk | 34284869 | `14e70476c9fd19f599c93b80820f640d8285c98a60b00cd16baf297dbfca743f` |
+
 ## 1.7.1 列表与组件交付（2026-10-23）
 
 本轮用户明确要求“落地打包”，已完成 Apple Silicon DMG 与 Android APK。版本为 1.7.1／Android `1007001`；应用包名、签名继承关系、插件 API 3 和同步格式保持不变，未改动或发布插件。

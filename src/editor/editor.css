@@ -20,6 +20,7 @@
 .markdown-editor .vditor-reset p { margin:0 0 19px; min-height:1em; }
 .markdown-editor .vditor-reset a { color:var(--accent-text,#286496); text-decoration:underline; text-decoration-color:var(--accent-ring,#bdd9f3); text-underline-offset:4px; }
 .markdown-editor .vditor-reset ul,.markdown-editor .vditor-reset ol { padding-left:25px; margin:12px 0 24px; }
+.markdown-editor.mode-edit .vditor-reset ul,.markdown-editor.mode-edit .vditor-reset ol { margin-bottom:6px; }
 .markdown-editor .vditor-reset li { margin:6px 0; padding-left:3px; }
 .markdown-editor .vditor-reset li p { margin:0; }
 .markdown-editor .vditor-reset blockquote:not(.callout) { padding:8px 18px; border-left:3px solid var(--accent-ring,#bdd9f3); color:var(--muted,#8792a3); margin:22px 0; }

@@ -79,10 +79,10 @@ function replaceItem(item, replacement) {
   if (!list.querySelector(':scope > li')) list.remove(); else renumber(list);
   if (trailing) renumber(trailing);
 }
-function exitEmptyItem(field, item, pending) {
+function exitEmptyItem(field, item) {
   const list = item.parentElement;
   const next = paragraph(field.ownerDocument);
-  if (pending && list.parentElement?.tagName === 'LI') next.setAttribute(EXIT, 'pending');
+  if (list.parentElement?.tagName === 'LI') next.setAttribute(EXIT, 'pending');
   replaceItem(item, next); focusStart(field, next);
 }
 function unlistItem(field, item, range) {
@@ -200,7 +200,7 @@ function convertPrefix(field, state) {
       const next = field.ownerDocument.createElement('li');
       current.replaceWith(list); next.append(current); list.append(next);
     }
-    renumber(list); focusStart(field, current); return true;
+    renumber(list); focusStart(field, ensureParagraph(list.firstElementChild)); return true;
   };
 }
 function actionFor(field, state, key, shift) {
@@ -210,13 +210,13 @@ function actionFor(field, state, key, shift) {
     if (current?.hasAttribute(EXIT) && isEmpty(current)) return () => { current.removeAttribute(EXIT); return true; };
     if (!item) return null;
     return () => {
-      if (isEmpty(item)) exitEmptyItem(field, item, false); else splitItem(field, item, range);
+      if (isEmpty(item)) outdentItem(field, item, range); else splitItem(field, item, range);
       return true;
     };
   }
   if (key === 'Backspace' && range.collapsed) {
     if (current && isEmpty(current) && current.hasAttribute(EXIT)) return () => { current.removeAttribute(EXIT); return true; };
-    if (item && isEmpty(item)) return () => { exitEmptyItem(field, item, true); return true; };
+    if (item && isEmpty(item)) return () => { exitEmptyItem(field, item); return true; };
     if (current?.parentElement?.tagName === 'LI' && isEmpty(current)) return () => liftParagraph(field, current);
   }
   if (key === 'Tab' && item && range.collapsed) {

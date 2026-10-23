@@ -5,6 +5,13 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.7.2",
+    changes: [
+      "修复输入列表前缀后按空格、尚未继续输入时的光标行位置。",
+      "空列表项按回车在原行减少一级缩进；最外层空项在原行取消符号，有内容时继续下一项。",
+    ],
+  },
+  {
     version: "1.7.1",
     changes: [
       "修复行首 -、1.、a. 加空格的列表触发，支持数字与字母自动续号。",
