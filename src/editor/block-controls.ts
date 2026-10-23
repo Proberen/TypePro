@@ -1,4 +1,5 @@
 import { adjacentBlock, blockLabel, canMoveBlock, findBlockDropTarget, getBlockAnchor, getBlockTarget, type BlockDropTarget } from './block-targets';
+import { isInBlockHoverRegion } from './block-hover.js';
 import './block-controls.css';
 
 export type BlockOperation = { type: 'delete'; block: HTMLElement } | { type: 'move'; block: HTMLElement; target: HTMLElement; position: 'before' | 'after' };
@@ -52,7 +53,6 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
   let drop: BlockDropTarget | null = null;
   let frame = 0;
   let dragFrame = 0;
-  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
   let destroyed = false;
 
   function menuItem(label: string, key: string, action: () => void) {
@@ -69,7 +69,6 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
   }
   function choose(block: HTMLElement | null) {
     if (gesture || !menu.hidden || !enabled()) return;
-    clearTimeout(leaveTimer);
     const next = valid(block) ? block : null;
     if (active === next) return;
     active = next;
@@ -91,19 +90,20 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
   function position() {
     frame = 0;
     if (!enabled()) { cancelGesture(); closeMenu(false); active = selected = null; handle.hidden = true; return; }
-    if (!valid(active)) { active = null; handle.hidden = true; closeMenu(false); return; }
+    if (!valid(active)) { cancelGesture(); active = null; if (!valid(selected)) selected = null; handle.hidden = true; closeMenu(false); return; }
     const rect = active.getBoundingClientRect();
     const port = visibleRect();
     const size = view.matchMedia('(pointer: coarse)').matches ? 36 : 28;
-    handle.hidden = rect.bottom < port.top || rect.top > port.bottom;
+    handle.hidden = rect.bottom <= port.top || rect.top >= port.bottom || rect.right <= port.left || rect.left >= port.right
+      || port.right - port.left < size + 4 || port.bottom - port.top < size + 4;
     if (handle.hidden) { closeMenu(false); return; }
-    handle.style.left = `${Math.max(port.left + 2, rect.left - size - 3)}px`;
+    handle.style.left = `${Math.min(port.right - size - 2, Math.max(port.left + 2, rect.left - size - 3))}px`;
     handle.style.top = `${Math.max(port.top + 2, Math.min(rect.top, port.bottom - size))}px`;
     handle.setAttribute('aria-label', `${blockLabel(active)}操作`);
     up.disabled = !adjacentBlock(field, active, -1); down.disabled = !adjacentBlock(field, active, 1);
     if (!menu.hidden) {
       const handleRect = handle.getBoundingClientRect();
-      menu.style.left = `${Math.min(view.innerWidth - 166, Math.max(8, handleRect.left))}px`;
+      menu.style.left = `${Math.max(8, Math.min(view.innerWidth - menu.offsetWidth - 8, handleRect.left))}px`;
       menu.style.top = `${Math.max(8, Math.min(handleRect.bottom + 4, view.innerHeight - menu.offsetHeight - 8))}px`;
     }
   }
@@ -184,7 +184,8 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
     if (gesture.touch) gesture.timer = setTimeout(startDrag, 280);
   }
   function pointerMove(event: PointerEvent) {
-    if (!gesture || event.pointerId !== gesture.id) return;
+    if (!gesture) { hover(event); return; }
+    if (event.pointerId !== gesture.id) return;
     gesture.x = event.clientX; gesture.y = event.clientY;
     const distance = Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY);
     if (!gesture.dragging && distance > (gesture.touch ? 10 : 5)) {
@@ -203,8 +204,13 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
     schedulePosition();
   }
   function hover(event: PointerEvent) {
-    if (event.pointerType !== 'mouse' || event.buttons || ignored(event.target)) return;
-    choose(getBlockTarget(field, event.target as Node));
+    if (event.pointerType !== 'mouse' || event.buttons) return;
+    if (!enabled()) { position(); return; }
+    if (ignored(event.target)) return;
+    const block = getBlockTarget(field, event.target as Node);
+    if (!block && valid(active) && !handle.hidden
+      && isInBlockHoverRegion(active.getBoundingClientRect(), handle.getBoundingClientRect(), visibleRect(), event.clientX, event.clientY)) return;
+    choose(block || selected);
   }
   function select(event: PointerEvent) {
     if (ignored(event.target) || !enabled()) return;
@@ -216,7 +222,7 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
     const block = getBlockTarget(field, doc.getSelection()?.anchorNode || null);
     selected = block; choose(block);
   }
-  function leave() { leaveTimer = setTimeout(() => choose(selected), 120); }
+  function leave(event: PointerEvent) { if (event.pointerType === 'mouse' && !event.relatedTarget) choose(selected); }
   function handleKey(event: KeyboardEvent) {
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault(); event.stopPropagation(); if (active) perform({ type: 'delete', block: active });
@@ -240,7 +246,7 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
   function nativeImageDrag(event: DragEvent) {
     if (enabled() && event.target instanceof view.Element && event.target.closest('img')) event.preventDefault();
   }
-  function cancelled() { cancelGesture(); closeMenu(false); schedulePosition(); }
+  function cancelled() { cancelGesture(); closeMenu(false); active = null; handle.hidden = true; schedulePosition(); }
 
   handle.addEventListener('pointerdown', pointerDown);
   handle.addEventListener('click', event => {
@@ -249,12 +255,10 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
     if (event.detail === 0) { if (menu.hidden) openMenu(); else closeMenu(true); }
   });
   handle.addEventListener('keydown', handleKey); menu.addEventListener('keydown', menuKey);
-  overlay.addEventListener('pointerenter', () => clearTimeout(leaveTimer));
-  overlay.addEventListener('pointerleave', leave);
-  field.addEventListener('pointermove', hover); field.addEventListener('pointerleave', leave);
   field.addEventListener('dragstart', nativeImageDrag, true);
   doc.addEventListener('pointerdown', select, true);
   doc.addEventListener('pointermove', pointerMove, { capture: true, passive: false });
+  doc.addEventListener('pointerout', leave);
   doc.addEventListener('pointerup', pointerUp, true); doc.addEventListener('pointercancel', cancelled, true);
   doc.addEventListener('selectionchange', selectionChange); doc.addEventListener('keydown', escape, true);
   doc.addEventListener('scroll', schedulePosition, true); view.addEventListener('resize', schedulePosition);
@@ -269,10 +273,11 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
   return {
     refresh() { if (gesture && !enabled()) cancelGesture(); position(); },
     destroy() {
-      cancelGesture(); destroyed = true; clearTimeout(leaveTimer); view.cancelAnimationFrame(frame);
+      cancelGesture(); destroyed = true; view.cancelAnimationFrame(frame);
       resize.disconnect(); observer.disconnect(); overlay.remove();
-      field.removeEventListener('pointermove', hover); field.removeEventListener('pointerleave', leave); field.removeEventListener('dragstart', nativeImageDrag, true);
+      field.removeEventListener('dragstart', nativeImageDrag, true);
       doc.removeEventListener('pointerdown', select, true); doc.removeEventListener('pointermove', pointerMove, true);
+      doc.removeEventListener('pointerout', leave);
       doc.removeEventListener('pointerup', pointerUp, true); doc.removeEventListener('pointercancel', cancelled, true);
       doc.removeEventListener('selectionchange', selectionChange); doc.removeEventListener('keydown', escape, true); doc.removeEventListener('scroll', schedulePosition, true);
       view.removeEventListener('resize', schedulePosition); view.removeEventListener('blur', cancelled); view.removeEventListener('pagehide', cancelled);

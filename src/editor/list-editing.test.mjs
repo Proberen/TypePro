@@ -3,22 +3,24 @@
  * installed Lute JS engine and the actual list modules; no TS transform/server.
  * The caller supplies {document, lute, installListEditing, decorateLists}.
  */
-export function runListEditingTests({ document: doc, lute, installListEditing, decorateLists }) {
+export function runListEditingTests({ document: doc, lute, installListEditing, decorateLists, listIndent, serializeListHtml, hydrateListHtml }) {
   const view = doc.defaultView;
   const results = [];
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   function fixture(markdown, run) {
     const field = doc.createElement('pre'); field.className = 'vditor-reset'; field.contentEditable = 'true';
     field.innerHTML = lute.Md2VditorIRDOM(markdown); doc.body.append(field);
-    let operations = 0;
+    let operations = 0; const history = [];
     const destroy = installListEditing({ field, transact(mutate) {
+      const before = field.innerHTML;
       const changed = mutate();
-      if (changed) { decorateLists?.(field); operations++; }
+      if (changed) { decorateLists?.(field); operations++; history.push({ before, after: field.innerHTML }); }
       return changed;
     } });
     const api = {
       field,
       get operations() { return operations; },
+      history,
       text(value, offset = value.length, end = offset) {
         const walker = doc.createTreeWalker(field, 4);
         let node;
@@ -198,9 +200,88 @@ export function runListEditingTests({ document: doc, lute, installListEditing, d
     assert(api.field.contains(first) && api.field.contains(last), 'other items lost');
     assert(api.field.textContent.includes('current') && api.field.children.length >= 3, 'current text not preserved outside list');
   }));
-  check('Tab on first item consumes focus movement without making undo entry', () => fixture('- first\n', api => {
-    api.text('first');
-    assert(api.key('Tab').defaultPrevented && api.operations === 0, 'first-item Tab should be a no-op');
+  for (const [name, markdown, alpha] of [['bullet', '- first\n', false], ['decimal', '1. first\n', false], ['alpha', '1. first\n', true], ['task', '- [x] first\n', false]]) {
+    check(`first ${name} item Tab indents in place and Shift+Tab reverses each level`, () => fixture(markdown, api => {
+      const list = api.field.firstElementChild, item = list.firstElementChild;
+      if (alpha) { list.type = 'a'; decorateLists(api.field); }
+      const checkbox = item.querySelector('input'); api.text(name === 'task' ? ' first' : 'first', 3);
+      const anchor = view.getSelection().anchorNode, offset = view.getSelection().anchorOffset;
+      assert(api.key('Tab').defaultPrevented && api.operations === 1 && listIndent(item) === 1, 'first Tab did not change one level');
+      assert(item.parentElement === list && api.field.querySelectorAll('li').length === 1, 'indent created a fake parent or rebuilt the item');
+      assert(view.getSelection().anchorNode === anchor && view.getSelection().anchorOffset === offset, 'Tab moved the text caret');
+      api.key('Tab'); assert(listIndent(item) === 2, 'second Tab did not add a level');
+      api.key('Tab', { shiftKey: true }); assert(listIndent(item) === 1, 'Shift+Tab did not reduce one level');
+      api.key('Tab', { shiftKey: true }); assert(listIndent(item) === 0 && item.parentElement === list, 'second Shift+Tab should restore the original list');
+      if (checkbox) assert(item.contains(checkbox) && checkbox.checked, 'checkbox state or identity changed');
+      assert(api.operations === 4, 'each structure change must be one transaction');
+    }));
+    check(`empty first ${name} item Tab and Enter reduce indentation without adding rows`, () => fixture(markdown, api => {
+      const list = api.field.firstElementChild, item = list.firstElementChild;
+      if (alpha) { list.type = 'a'; decorateLists(api.field); }
+      for (const node of [...item.childNodes]) if (node.nodeType !== 1 || !node.matches('input,.note-list-marker')) node.remove();
+      item.append(doc.createElement('br')); api.start(item); api.key('Tab'); api.key('Tab');
+      assert(listIndent(item) === 2 && api.field.querySelectorAll('li').length === 1, 'empty first item did not indent');
+      api.key('Enter'); assert(listIndent(item) === 1 && item.parentElement === list, 'empty Enter should keep its marker one level left');
+      api.key('Enter'); assert(listIndent(item) === 0 && item.parentElement === list, 'second empty Enter should restore original level');
+      api.key('Enter'); assert(!api.field.querySelector('li') && api.field.querySelector('p br'), 'outer empty Enter should unlist after all independent levels');
+    }));
+  }
+  check('indenting a first item leaves later sibling items and embedded components intact', () => fixture('- first\n\n  ```js\n  const value = 1;\n  ```\n- following\n', api => {
+    const list = api.field.firstElementChild, first = list.firstElementChild, following = list.lastElementChild;
+    const code = first.querySelector('[data-type="code-block"]'); api.text('first'); api.key('Tab');
+    assert(listIndent(first) === 1 && listIndent(following) === 0, 'independent indent changed sibling level');
+    assert(first.contains(code) && following.parentElement === list && api.field.querySelectorAll('li').length === 2, 'component or sibling was moved');
+  }));
+  check('nested first item can indent independently before structural outdent resumes', () => fixture('- parent\n  - child\n  - following\n', api => {
+    const list = api.field.querySelector('ul ul'), item = list.firstElementChild, following = list.lastElementChild;
+    api.text('child'); api.key('Tab'); assert(listIndent(item) === 1 && item.parentElement === list, 'nested first item was not independently indented');
+    api.key('Tab', { shiftKey: true }); assert(listIndent(item) === 0 && item.parentElement === list, 'first Shift+Tab should undo only independent indent');
+    api.key('Tab', { shiftKey: true }); assert(item.parentElement === api.field.firstElementChild && item.contains(following), 'further outdent lost nested siblings');
+  }));
+  check('Enter continues at the independently indented level and keeps inline text nodes', () => fixture('1. abc**DEF**\n2. following\n', api => {
+    const first = api.field.querySelector('li'), bold = first.querySelector('strong'); api.text('abc'); api.key('Tab'); api.key('Enter');
+    const next = first.nextElementSibling;
+    assert(listIndent(first) === 1 && listIndent(next) === 1 && next.contains(bold), 'Enter lost inherited indent or formatting');
+    assert(next.dataset.marker === '2.' && next.nextElementSibling.dataset.marker === '3.', 'continuation numbering wrong');
+  }));
+  check('newly continued indented item can become a real child of its previous item', () => fixture('- first\n', api => {
+    api.text('first'); api.key('Tab'); api.key('Enter'); const list = api.field.firstElementChild, first = list.firstElementChild, next = list.lastElementChild;
+    api.key('Tab'); assert(next.parentElement.parentElement === first && listIndent(next) === 0, 'real nesting retained redundant independent indent');
+    assert(listIndent(first) === 1 && api.field.querySelectorAll('li').length === 2, 'real nesting changed parent indent or inserted a fake item');
+  }));
+  check('Tab never shifts an independently deeper item left when its preceding item was outdented', () => fixture('- first\n', api => {
+    api.text('first'); api.key('Tab'); api.key('Tab'); api.key('Enter');
+    const first = api.field.querySelector('li'), next = first.nextElementSibling;
+    next.querySelector('br').replaceWith(doc.createTextNode('next'));
+    api.text('first'); api.key('Tab', { shiftKey: true }); api.text('next'); api.key('Tab');
+    assert(listIndent(first) === 1 && next.parentElement.parentElement === first && listIndent(next) === 1, 'nesting discarded residual indentation');
+    api.key('Tab', { shiftKey: true });
+    assert(listIndent(next) === 0 && next.parentElement.parentElement === first, 'first Shift+Tab should remove the residual level only');
+  }));
+  check('structural outdent inherits parent indentation and preserves trailing sublists through save/reopen', () => fixture('- parent\n  - child\n  - following\n', api => {
+    const outer = api.field.firstElementChild, parent = outer.firstElementChild, nested = parent.querySelector('ul'), child = nested.firstElementChild, following = nested.lastElementChild;
+    api.text('parent'); api.key('Tab'); api.key('Tab'); api.text('child'); api.key('Tab', { shiftKey: true });
+    assert(child.parentElement === outer && listIndent(child) === 2 && listIndent(parent) === 2 && child.contains(following), 'outdent lost inherited indent or trailing nodes');
+    const clone = api.field.cloneNode(true); serializeListHtml(clone, lute);
+    api.field.innerHTML = lute.Md2VditorIRDOM(lute.VditorIRDOM2Md(clone.innerHTML)); hydrateListHtml(api.field, lute);
+    const items = api.field.querySelectorAll(':scope > ul > li');
+    assert(items.length === 2 && listIndent(items[0]) === 2 && listIndent(items[1]) === 2 && items[1].querySelector('ul > li')?.textContent === 'following', 'outdent hierarchy changed on reopen');
+  }));
+  check('empty Backspace removes marker before reducing independent indentation', () => fixture('- first\n', api => {
+    api.text('first'); api.key('Tab'); api.key('Tab'); api.key('Enter'); const first = api.field.querySelector('li');
+    api.key('Backspace'); const current = api.field.lastElementChild;
+    assert(current.tagName === 'P' && listIndent(current) === 2 && api.field.querySelector('li') === first, 'first Backspace lost indentation or another item');
+    api.key('Backspace'); assert(listIndent(current) === 1, 'next Backspace should reduce only one level');
+    api.key('Backspace'); assert(listIndent(current) === 0 && current.isConnected, 'last independent level did not clear');
+    assert(!api.key('Backspace').defaultPrevented, 'unindented paragraph should resume native Backspace');
+  }));
+  check('undo snapshot boundary contains indentation metadata before transaction completion', () => fixture('- first\n', api => {
+    api.text('first'); api.key('Tab');
+    assert(api.history.length === 1 && /data-typepro-indent/.test(api.history[0].after), 'undo snapshot was captured before metadata');
+    api.field.innerHTML = lute.SpinVditorIRDOM(api.history[0].before); decorateLists(api.field);
+    assert(listIndent(api.field.querySelector('li')) === 0, 'undo snapshot did not restore original level');
+    api.field.innerHTML = lute.SpinVditorIRDOM(api.history[0].after); decorateLists(api.field);
+    assert(listIndent(api.field.querySelector('li')) === 1, 'redo snapshot did not recover independent level');
   }));
   check('mobile beforeinput Enter and Backspace follow the same rules', () => fixture('- first\n', api => {
     api.text('first'); api.input('insertParagraph');

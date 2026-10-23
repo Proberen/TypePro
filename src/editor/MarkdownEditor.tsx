@@ -11,7 +11,7 @@ import { applyBlockOperation } from './block-actions';
 import { installBlockControls, type BlockOperation } from './block-controls';
 import { installImageResizeControls } from './image-resize';
 import { installListEditing } from './list-editing.js';
-import { decorateLists, hydrateListHtml } from './list-markdown.js';
+import { decorateLists, hydrateListHtml, stripListMetadata } from './list-markdown.js';
 import { decorateResizableImages, persistImageWidth } from './image-dimensions';
 import { codeBlockText, createAssetRenderer, disposeEditorCodeBlocks, EDITOR_ASSETS, enhanceEditor, formatEditorCodeBlock, MARKDOWN_OPTIONS, renderReading, selectedCodeEditor, snapshotMarkdown, toggleCodeFold, refreshEditorDiagrams, retainRemovedCodeBlocks } from './rendering';
 import { EDITOR_COMMANDS, EDITOR_SHORTCUTS, INLINE_MARKERS, matchesEditorShortcut, type EditorCommand } from './commands';
@@ -417,9 +417,11 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
         restoreUndo = installCodeUndoBridge(instance.vditor, () => {
           if (disposed) return;
           prepareLists(instance);
-          decorateResizableImages(mount); assets(root);
+          decorateResizableImages(mount); const restoredAssets = assets(root);
           enhanceEditor(mount, propsRef.current.documentId, undefined, true);
+          savedSelection.current = captureRichSelection(instance.vditor.ir!.element);
           blockControls.current?.refresh(); imageControls.current?.refresh(); collect();
+          return restoredAssets;
         });
         instance.setValue(buffer.current.value); prepareLists(instance); buffer.current.baseline(snapshotMarkdown(instance));
         const field = instance.vditor.ir!.element;
@@ -449,7 +451,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
         const cleanCopy = (event: ClipboardEvent) => {
           if (!listCopies.has(event) || !event.defaultPrevented || !event.clipboardData) return;
           const text = event.clipboardData.getData('text/plain');
-          event.clipboardData.setData('text/plain', text.split('<span data-typepro-list="a"/>').join(''));
+          event.clipboardData.setData('text/plain', stripListMetadata(text));
         };
         for (const type of ['copy', 'cut'] as const) {
           field.addEventListener(type, captureCopy, true); field.addEventListener(type, cleanCopy);

@@ -1,6 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { adjacentBlock, blockLabel, canMoveBlock, findBlockDropTarget, getBlockAnchor, getBlockTarget, getBodyBlocks } from './block-targets.ts';
+import { isInBlockHoverRegion } from './block-hover.js';
+
+test('slow and fast mouse paths across the component gutter reach the handle without leaving its region', () => {
+  const block = { left: 100, right: 700, top: 100, bottom: 400 };
+  const handle = { left: 69, right: 97, top: 100, bottom: 128 };
+  const viewport = { left: 40, right: 740, top: 60, bottom: 600 };
+  // Slow: cross the 3px gap, pause in the gutter, then move up to the handle.
+  for (let x = 110; x >= 83; x--) assert.equal(isInBlockHoverRegion(block, handle, viewport, x, 250), true);
+  for (let y = 250; y >= 114; y--) assert.equal(isInBlockHoverRegion(block, handle, viewport, 83, y), true);
+  // Fast: a single pointermove lands directly on the handle; no timeout is involved.
+  assert.equal(isInBlockHoverRegion(block, handle, viewport, 83, 114), true);
+  for (const point of [[68, 114], [83, 99], [701, 250], [100, 401]]) {
+    assert.equal(isInBlockHoverRegion(block, handle, viewport, ...point), false);
+  }
+});
+
+test('the hover region follows the visible viewport and a handle clamped inside a narrow editor', () => {
+  const viewport = { left: 20, right: 300, top: 60, bottom: 500 };
+  const block = { left: 24, right: 650, top: -120, bottom: 280 };
+  const handle = { left: 22, right: 50, top: 62, bottom: 90 };
+  assert.equal(isInBlockHoverRegion(block, handle, viewport, 35, 75), true);
+  assert.equal(isInBlockHoverRegion(block, handle, viewport, 21, 75), false);
+  assert.equal(isInBlockHoverRegion(block, handle, viewport, 35, 59), false);
+  assert.equal(isInBlockHoverRegion(block, handle, viewport, 301, 75), false);
+  // Scrolling changes the live component bounds; a previous gutter point is no longer retained.
+  const scrolled = { ...block, top: 350, bottom: 750 }, movedHandle = { ...handle, top: 350, bottom: 378 };
+  assert.equal(isInBlockHoverRegion(scrolled, movedHandle, viewport, 35, 75), false);
+});
 
 // Structural DOM fixture; targeting, ownership and placement use the production functions.
 class Element {

@@ -1,5 +1,5 @@
 /** Native-DOM/Lute roundtrip checks. The caller supplies the real JS modules. */
-export function runListMarkdownTests({ document: doc, lute, listKind, clearListMarkers, decorateLists, hydrateListHtml, serializeListHtml }) {
+export function runListMarkdownTests({ document: doc, lute, listKind, listIndent, setListIndent, stripListMetadata, clearListMarkers, decorateLists, hydrateListHtml, serializeListHtml }) {
   const checks = [];
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
   const marker = () => {
@@ -118,6 +118,48 @@ export function runListMarkdownTests({ document: doc, lute, listKind, clearListM
   check('plain Markdown lists retain their original serialization', () => {
     const root = field('- bullet\n  1. one\n  2. two\n- last\n'), before = lute.VditorIRDOM2Md(root.innerHTML);
     decorateLists(root); assert(save(root) === before, 'normal lists changed');
+  });
+  for (const [name, markdown, alpha] of [['bullet', '- first\n- following\n', false], ['decimal', '1. first\n2. following\n', false], ['alpha', '1. first\n2. following\n', true], ['task', '- [x] first\n- [ ] following\n', false]]) {
+    check(`independent ${name} indentation survives Spin, export and three reopens`, () => {
+      let root = field(markdown); if (alpha) root.firstElementChild.type = 'a';
+      setListIndent(root.querySelector('li'), 2); decorateLists(root);
+      let saved;
+      for (let i = 0; i < 3; i++) { spin(root); saved = save(root); root = reopen(saved); }
+      const list = root.firstElementChild, first = list.firstElementChild, following = list.lastElementChild;
+      assert(listIndent(first) === 2 && listIndent(following) === 0, 'independent levels lost or spread to siblings');
+      assert(root.querySelectorAll('li').length === 2 && !first.querySelector('li'), 'storage inserted a fake parent');
+      assert(/data-typepro-indent="2"/.test(saved) && /margin-left: (?:56|62)px/.test(saved), 'portable HTML indentation not saved');
+      if (alpha) assert(listKind(list) === 'alpha', 'alphabetic style lost');
+      if (name === 'task') assert(first.classList.contains('vditor-task') && first.querySelector('input')?.checked && !following.querySelector('input')?.checked, 'task state lost');
+    });
+  }
+  check('independent indentation and alpha style coexist with code and native HTML attributes', () => {
+    let root = reopen('<ol type="a"><li>text<img src="../../assets/a.png" width="240"><div data-keep="yes">HTML</div><pre><code class="language-js">const x = 1;</code></pre></li></ol>');
+    setListIndent(root.querySelector('li'), 1); spin(root); const saved = save(root); root = reopen(saved);
+    assert(listIndent(root.querySelector('li')) === 1 && listKind(root.firstElementChild) === 'alpha', 'combined metadata lost');
+    assert(/width="240"/.test(saved) && /data-keep="yes"/.test(saved) && /const x = 1/.test(saved), 'component source or attributes lost');
+  });
+  check('an empty unlisted paragraph retains and reopens its remaining indentation', () => {
+    const root = field('paragraph'), current = root.querySelector('p'); current.replaceChildren(doc.createElement('br')); setListIndent(current, 2);
+    spin(root); const saved = save(root), reopened = reopen(saved);
+    assert(listIndent(reopened.querySelector('p[data-block]')) === 2, 'cancelled marker paragraph lost indentation');
+    assert(!reopened.querySelector('li'), 'paragraph restore inserted a fake list item');
+  });
+  check('only bounded integer indentation metadata is accepted on import', () => {
+    for (const level of ['-1', '1.5', '33', '999999999999999999999', 'NaN', '1e2', '']) {
+      const root = field(`<ul><li data-typepro-indent="${level}">text</li></ul>`), before = root.innerHTML;
+      hydrateListHtml(root, lute); assert(root.innerHTML === before, `invalid level ${level} imported`);
+    }
+    const root = field('<ul><li style="margin-left:99999px">text</li></ul>'), before = root.innerHTML;
+    hydrateListHtml(root, lute); assert(root.innerHTML === before, 'arbitrary CSS became indentation');
+    const valid = reopen('<ul><li data-typepro-indent="0">text</li></ul>');
+    assert(valid.querySelector('li[data-marker]') && listIndent(valid.querySelector('li')) === 0, 'valid zero level rejected');
+  });
+  check('clipboard cleanup removes only internal marker spans and keeps persisted HTML attrs', () => {
+    const value = '<span data-typepro-list="a" data-typepro-indent="2"/><span data-typepro-indent="1" data-typepro-target="p"/><li data-typepro-indent="2" style="margin-left:56px">text</li><span style="color:red"/>';
+    const result = stripListMetadata(value);
+    assert(!result.includes('data-typepro-target') && !result.includes('data-typepro-list="a"'), 'internal copy metadata leaked');
+    assert(result.includes('<li data-typepro-indent="2"') && result.includes('<span style="color:red"/>'), 'persisted HTML or custom span was removed');
   });
   check('pseudo lists in raw text, code and custom HTML wrappers are not hydrated', () => {
     for (const markdown of ['```html\n<ol type="a"><li>code</li></ol>\n```', '<pre><ol type="a"><li>pre</li></ol></pre>', '<script>const text = \'<ol type="a"><li>x</li></ol>\';</script>', '<div class="custom"><ol type="a"><li>wrapped</li></ol></div>', '<ol type="a" class="custom"><li>attributes</li></ol>', '<ol type="a"><li value="7">custom numbering</li></ol>']) {

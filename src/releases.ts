@@ -5,6 +5,14 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.7.4",
+    changes: [
+      "列表首项、单独一项也支持 Tab 原行缩进，Shift+Tab 逐级还原，保存重开保留独立缩进。",
+      "修复鼠标移向组件六点把手时操作按钮消失的问题，保留组件拖拽、移动和删除。",
+      "撤销与重做恢复正文滚动位置，光标在屏外时仅作必要滚动。",
+    ],
+  },
+  {
     version: "1.7.3",
     changes: [
       "新增 GitHub 版本检查：启动时检查、前台每天检查，并支持在关于页面手动检查。",

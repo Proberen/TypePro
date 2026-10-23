@@ -1,4 +1,4 @@
-import { clearListMarkers, decorateLists, listKind } from './list-markdown.js';
+import { clearListMarkers, decorateLists, listIndent, listKind, setListIndent } from './list-markdown.js';
 
 const LIST = /^(UL|OL)$/;
 const EXCLUDED = '.cm-editor,[data-render],.vditor-ir__preview,[data-type="code-block"],[data-type="math-block"],[data-type="html-block"],table,pre:not(.vditor-reset),code';
@@ -39,9 +39,12 @@ function focusStart(field, node) {
   range.collapse(true); setSelection(field, range);
 }
 function bookmark(field, range, mutate) {
+  const text = range.startContainer.nodeType === 3 ? { node: range.startContainer, offset: range.startOffset } : null;
   const marker = field.ownerDocument.createElement('wbr');
   range.insertNode(marker); mutate();
-  range.setStartBefore(marker); range.collapse(true); marker.remove(); setSelection(field, range);
+  if (text && field.contains(text.node) && text.offset <= text.node.length) range.setStart(text.node, text.offset);
+  else range.setStartBefore(marker);
+  range.collapse(true); marker.remove(); setSelection(field, range);
 }
 function startOf(list) { return Math.max(1, Number(list.getAttribute('start')) || 1); }
 function renumber(list) {
@@ -82,6 +85,7 @@ function replaceItem(item, replacement) {
 function exitEmptyItem(field, item) {
   const list = item.parentElement;
   const next = paragraph(field.ownerDocument);
+  setListIndent(next, listIndent(item));
   if (list.parentElement?.tagName === 'LI') next.setAttribute(EXIT, 'pending');
   replaceItem(item, next); focusStart(field, next);
 }
@@ -105,16 +109,24 @@ function unlistItem(field, item, range) {
 function indentItem(field, item, range) {
   const previous = item.previousElementSibling;
   const source = item.parentElement, kind = listKind(source);
+  if (previous?.tagName !== 'LI') {
+    let changed = false;
+    bookmark(field, range, () => { changed = setListIndent(item, listIndent(item) + 1); });
+    return changed;
+  }
   bookmark(field, range, () => {
     let nested = previous.lastElementChild;
     if (!nested || !LIST.test(nested.tagName) || listKind(nested) !== kind) {
       nested = newList(field.ownerDocument, kind); previous.append(nested);
     }
-    nested.append(item); renumber(nested);
+    const residualIndent = Math.max(0, listIndent(item) - listIndent(previous));
+    setListIndent(item, residualIndent); nested.append(item); renumber(nested);
     if (!source.querySelector(':scope > li')) source.remove(); else renumber(source);
   });
+  return true;
 }
 function outdentItem(field, item, range) {
+  if (listIndent(item)) { bookmark(field, range, () => setListIndent(item, listIndent(item) - 1)); return; }
   const source = item.parentElement, parentItem = source.parentElement;
   if (parentItem.tagName !== 'LI') { unlistItem(field, item, range); return; }
   bookmark(field, range, () => {
@@ -126,6 +138,7 @@ function outdentItem(field, item, range) {
     // The outer list owns this item's style; its nested lists keep their own type.
     clearListMarkers(item);
     parentItem.after(item);
+    setListIndent(item, listIndent(parentItem));
     if (!source.querySelector(':scope > li')) source.remove(); else renumber(source);
     renumber(item.parentElement);
   });
@@ -148,6 +161,7 @@ function liftParagraph(field, current) {
   focusStart(field, current); return true;
 }
 function splitItem(field, item, range) {
+  const indent = listIndent(item);
   range.deleteContents();
   const suffix = range.cloneRange(); suffix.setEnd(item, item.childNodes.length);
   const next = item.cloneNode(false); next.removeAttribute('data-node-id'); next.removeAttribute(EXIT);
@@ -158,7 +172,7 @@ function splitItem(field, item, range) {
     const checkbox = field.ownerDocument.createElement('input'); checkbox.type = 'checkbox'; next.prepend(checkbox);
   }
   const focus = ensureParagraph(next); ensureParagraph(item);
-  item.after(next); renumber(item.parentElement); focusStart(field, focus);
+  item.after(next); setListIndent(next, indent); renumber(item.parentElement); focusStart(field, focus);
 }
 function prefixKind(text) {
   if (text === '-') return { kind: 'bullet', start: 1 };
@@ -198,7 +212,8 @@ function convertPrefix(field, state) {
       replaceItem(item, list); list.append(item);
     } else {
       const next = field.ownerDocument.createElement('li');
-      current.replaceWith(list); next.append(current); list.append(next);
+      const indent = listIndent(current); setListIndent(current, 0);
+      current.replaceWith(list); next.append(current); list.append(next); setListIndent(next, indent);
     }
     renumber(list); focusStart(field, ensureParagraph(list.firstElementChild)); return true;
   };
@@ -207,6 +222,7 @@ function actionFor(field, state, key, shift) {
   const { range, item, current } = state;
   if (key === ' ' && !shift) return convertPrefix(field, state);
   if (key === 'Enter' && !shift) {
+    if (current?.tagName === 'P' && isEmpty(current) && listIndent(current)) return () => { setListIndent(current, listIndent(current) - 1); return true; };
     if (current?.hasAttribute(EXIT) && isEmpty(current)) return () => { current.removeAttribute(EXIT); return true; };
     if (!item) return null;
     return () => {
@@ -215,13 +231,19 @@ function actionFor(field, state, key, shift) {
     };
   }
   if (key === 'Backspace' && range.collapsed) {
+    if (current?.tagName === 'P' && isEmpty(current) && listIndent(current)) return () => { setListIndent(current, listIndent(current) - 1); return true; };
     if (current && isEmpty(current) && current.hasAttribute(EXIT)) return () => { current.removeAttribute(EXIT); return true; };
     if (item && isEmpty(item)) return () => { exitEmptyItem(field, item); return true; };
     if (current?.parentElement?.tagName === 'LI' && isEmpty(current)) return () => liftParagraph(field, current);
   }
+  if (key === 'Tab' && current?.tagName === 'P' && range.collapsed && (current.hasAttribute(EXIT) || listIndent(current))) {
+    return () => {
+      if (shift && !listIndent(current)) { current.removeAttribute(EXIT); return true; }
+      let changed = false; bookmark(field, range, () => { changed = setListIndent(current, listIndent(current) + (shift ? -1 : 1)); }); return changed;
+    };
+  }
   if (key === 'Tab' && item && range.collapsed) {
-    if (!shift && item.previousElementSibling?.tagName !== 'LI') return false;
-    return () => { if (shift) outdentItem(field, item, range); else indentItem(field, item, range); return true; };
+    return () => { if (shift) { outdentItem(field, item, range); return true; } return indentItem(field, item, range); };
   }
   return null;
 }
@@ -237,7 +259,7 @@ export function installListEditing({ field, transact }) {
     const action = actionFor(field, state, key, shift);
     if (action === null) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    if (action) transact(action);
+    transact(action);
   }
   function keydown(event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;

@@ -153,12 +153,12 @@ export function createAssetRenderer(resolveAsset: (path: string) => Promise<stri
   const cache = new Map<string, Promise<string>>();
   const failed = new WeakSet<HTMLImageElement>();
   return (root: HTMLElement) => {
-    root.querySelectorAll<HTMLImageElement>('img').forEach((image) => {
+    return Promise.all([...root.querySelectorAll<HTMLImageElement>('img')].map((image) => {
       const path = image.dataset.noteAsset || image.getAttribute('src') || '';
       if (!path.startsWith('../../assets/') || failed.has(image)) return;
       image.dataset.noteAsset = path;
       if (!cache.has(path)) cache.set(path, resolveAsset(path));
-      void cache.get(path)!.then((url) => {
+      return cache.get(path)!.then((url) => {
         if (!url.startsWith('data:image/')) throw new Error('Invalid local image');
         if (image.isConnected && image.dataset.noteAsset === path && image.getAttribute('src') !== url) {
           image.src = url;
@@ -167,7 +167,7 @@ export function createAssetRenderer(resolveAsset: (path: string) => Promise<stri
         failed.add(image);
         image.title = '图片不存在或无法读取';
       });
-    });
+    })).then(() => {});
   };
 }
 

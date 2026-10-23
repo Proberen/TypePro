@@ -4,6 +4,7 @@
 
 | 版本 | Mac（Apple Silicon） | Android | 源码 |
 | --- | --- | --- | --- |
+| [1.7.4](https://github.com/Proberen/TypePro/releases/tag/v1.7.4) | DMG | APK | 标签与源码 ZIP |
 | [1.7.3](https://github.com/Proberen/TypePro/releases/tag/v1.7.3) | DMG | APK | 标签与源码 ZIP |
 | [1.7.2](https://github.com/Proberen/TypePro/releases/tag/v1.7.2) | DMG | APK | 标签与原始 ZIP |
 | [1.7.1](https://github.com/Proberen/TypePro/releases/tag/v1.7.1) | DMG | APK | 标签与原始 ZIP |

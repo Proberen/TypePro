@@ -19,9 +19,11 @@
 .markdown-editor .vditor-reset > :first-child { margin-top:0; }
 .markdown-editor .vditor-reset p { margin:0 0 19px; min-height:1em; }
 .markdown-editor .vditor-reset a { color:var(--accent-text,#286496); text-decoration:underline; text-decoration-color:var(--accent-ring,#bdd9f3); text-underline-offset:4px; }
-.markdown-editor .vditor-reset ul,.markdown-editor .vditor-reset ol { padding-left:25px; margin:12px 0 24px; }
+.markdown-editor .vditor-reset { --note-list-padding:25px; --note-list-item-padding:3px; }
+.markdown-editor .vditor-reset ul,.markdown-editor .vditor-reset ol { padding-left:var(--note-list-padding); margin:12px 0 24px; }
 .markdown-editor.mode-edit .vditor-reset ul,.markdown-editor.mode-edit .vditor-reset ol { margin-bottom:6px; }
-.markdown-editor .vditor-reset li { margin:6px 0; padding-left:3px; }
+.markdown-editor .vditor-reset li { --note-list-item-padding:3px; margin:6px 0; padding-left:var(--note-list-item-padding); }
+.markdown-editor .vditor-reset [data-typepro-indent] { margin-left:calc((var(--note-list-padding) + var(--note-list-item-padding)) * var(--note-list-indent-level))!important; }
 .markdown-editor .vditor-reset li p { margin:0; }
 .markdown-editor .vditor-reset blockquote:not(.callout) { padding:8px 18px; border-left:3px solid var(--accent-ring,#bdd9f3); color:var(--muted,#8792a3); margin:22px 0; }
 .markdown-editor .vditor-reset blockquote:not(.callout)::before { display:none; }
@@ -32,7 +34,7 @@
 .markdown-editor .vditor-reset table tr { background:transparent; }
 .markdown-editor .vditor-reset table th:not([align]) { text-align:left; }
 .markdown-editor .vditor-reset table td,.markdown-editor .vditor-reset table th { border:1px solid var(--editor-border); padding:10px 15px; }
-.markdown-editor .vditor-reset .vditor-task { position:relative; padding-left:6px; }
+.markdown-editor .vditor-reset .vditor-task { --note-list-item-padding:6px; position:relative; padding-left:var(--note-list-item-padding); }
 .markdown-editor .vditor-reset input[type='checkbox'] { appearance:none; -webkit-appearance:none; position:absolute; left:-20px; top:calc((1.85em - 16px)/2); display:inline-block; width:16px; height:16px; margin:0; font-size:inherit; border:1px solid #bac5d3; border-radius:4px; background:transparent; opacity:1; cursor:pointer; }
 .markdown-editor .vditor-reset input[type='checkbox']:checked { background:var(--accent,#74ade5); border-color:var(--accent,#74ade5); }
 .markdown-editor .vditor-reset input[type='checkbox']:checked::before { content:''; position:absolute; left:3px; top:3px; width:8px; height:4px; border-left:2px solid #fff; border-bottom:2px solid #fff; transform:rotate(-45deg); }
@@ -132,7 +134,7 @@
   .markdown-editor .vditor-reset h2 { font-size:21px; line-height:1.55; margin:29px 0 15px; }
   .markdown-editor .vditor-reset h3 { font-size:18px; }
   .markdown-editor .vditor-reset p { margin-bottom:17px; }
-  .markdown-editor .vditor-reset ul,.markdown-editor .vditor-reset ol { padding-left:23px; }
+  .markdown-editor .vditor-reset { --note-list-padding:23px; }
   .markdown-editor .vditor-reset table { font-size:12px; }
   .markdown-editor .vditor-reset td,.markdown-editor .vditor-reset th { padding:9px 11px; }
   .markdown-editor .note-codebox,.markdown-editor .vditor-ir [data-type='code-block'] { margin:18px 0 25px; }
@@ -169,7 +171,7 @@
 .markdown-editor .note-style-marker { display:none!important; }
 .markdown-editor .note-list-marker { display:none!important; }
 .markdown-editor .vditor-reset ol[type='a'] { list-style-type:lower-alpha; }
-.markdown-editor .vditor-ir p[data-typepro-list-exit='pending'] { padding-left:28px; }
+.markdown-editor .vditor-ir p[data-typepro-list-exit='pending'] { padding-left:calc(var(--note-list-padding) + var(--note-list-item-padding)); }
 .markdown-editor .note-codehead { gap:7px; }
 .markdown-editor .note-codehead select { margin-right:auto; }
 .markdown-editor .note-codehead .note-code-fold { width:23px; flex:none; }
@@ -215,7 +217,6 @@
 .markdown-editor .table-dialog .table-size-label { font-size:11px; color:var(--muted,#8792a3); margin:12px 0 24px; }
 @media(max-width:1100px) { .markdown-editor .toolbar-strip { padding:0 16px; } }
 @media(max-width:700px) {
-  .markdown-editor .vditor-ir p[data-typepro-list-exit='pending'] { padding-left:26px; }
   .markdown-editor .editor-tools { height:46px; }
   .markdown-editor .toolbar-strip { padding:0 13px; gap:4px; }
   .markdown-editor .toolbar-strip button { height:33px; width:33px; }
