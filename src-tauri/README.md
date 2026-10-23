@@ -1,4 +1,4 @@
-# Native application
+# TypePro native application
 
 The Tauri window uses the operating system WebView. The native layer owns Markdown files, the index, attachments, portable ZIP import/export, and Android document-provider writes. It does not require a login or storage-wide Android permissions.
 
@@ -6,14 +6,16 @@ The Tauri window uses the operating system WebView. The native layer owns Markdo
 
 The root is the platform app-data directory followed by `workspace/`:
 
-- `index.json`: notebook/document metadata and installed plugin records.
+- `index.json`: notebook/document metadata, optional notebook covers, and installed plugin records.
 - `notebooks/<notebook UUID>/<document UUID>.md`: the actual UTF-8 document.
 - `assets/<UUID>.<extension>`: local attachments.
 - `pending.json`: a temporary recovery journal for an interrupted save.
 
 Commands serialize storage access. Each changed Markdown file and the index use atomic replacement. The journal completes an interrupted save on the next load. Invalid indexes or missing files produce an error instead of silently replacing the library. Files removed from a committed index are deleted afterward. Unused attachments are retained until application data is removed; exporting does not delete local data.
 
-Portable ZIPs contain `manifest.json`, ordinary Markdown files, and the attachments referenced by those documents. Import allocates new UUIDs and keeps existing data, including same-name notebooks/documents. Plugins are installed separately from their own packages. Limits: 16 MB per Markdown document, 32 MB per attachment, 128 MB per ZIP, 256 MB expanded ZIP, 10,000 ZIP entries, 5,000 documents. Markdown exports alone do not include attachments.
+Portable ZIPs contain `manifest.json`, ordinary Markdown files, and the attachments referenced by documents or notebook covers. Covers accept `preset:0` through `preset:5`, or the same canonical `../../assets/<UUID>.<extension>` reference as document attachments. Import allocates new UUIDs, remaps both document and cover attachment references, and keeps existing data, including same-name notebooks/documents. Older indexes, recovery journals and ZIPs without `cover` remain readable. Plugins are installed separately from their own packages. Limits: 16 MB per Markdown document, 32 MB per attachment, 128 MB per ZIP, 256 MB expanded ZIP, 10,000 ZIP entries, 5,000 documents. Markdown exports alone do not include attachments or notebook covers.
+
+TypePro 1.1.0 retains the original app identifier and Android package name `com.localnotes.notebook`, keeping the existing data location. Android versionCode increases from `1000000` to `1001000`, and updates use the same personal signing key.
 
 ## Building
 
@@ -36,7 +38,7 @@ Keep the signing key for future updates; it is intentionally outside this source
 
 ## Validation
 
-`cargo test --manifest-path src-tauri/Cargo.toml --lib` checks saving/reloading real Markdown, external Markdown edits, journal recovery, damaged-index protection, ZIP/attachment round trips with duplicate imports, traversal rejection, committed deletion, and UTF-8 imports. App UI and system document-provider behavior require device or WebView checks in addition to these tests.
+`cargo test --manifest-path src-tauri/Cargo.toml --lib` checks saving/reloading real Markdown, external Markdown edits, journal recovery, damaged-index protection, ZIP/attachment and cover round trips with duplicate imports, legacy cover-free records, traversal rejection, committed deletion, and UTF-8 imports. App UI and system document-provider behavior require device or WebView checks in addition to these tests.
 
 ## Android file transfer
 

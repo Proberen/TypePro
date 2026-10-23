@@ -7,6 +7,7 @@ export interface NoteDocument {
 export interface Notebook {
   id: string;
   name: string;
+  cover?: string;
   documents: NoteDocument[];
 }
 export interface InstalledPlugin {

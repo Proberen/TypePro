@@ -16,6 +16,7 @@ export default function Modal({
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
+    dialog.querySelector<HTMLInputElement>('input:not([type]),input[type="text"],input[type="search"]')?.focus();
     return () => dialog.close();
   }, []);
   return (

@@ -1,112 +1,25 @@
-import {
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  Folder,
-  MoreHorizontal,
-  Plus,
-  Puzzle,
-  ArrowDownUp,
-} from "lucide-react";
-import { useState } from "react";
-import type { Notebook } from "./lib/types";
-
+import { ArrowDownUp, ChevronDown, ChevronsLeft, FileText, Home, ListTree, MoreHorizontal, Plus, Puzzle } from 'lucide-react';
+import { useRef } from 'react';
+import type { Notebook } from './lib/types';
 interface Props {
-  notebooks: Notebook[];
-  activeId: string | null;
-  onSelect: (notebookId: string, documentId?: string) => void;
-  onCreate: () => void;
-  onMenu: (notebookId: string, documentId?: string) => void;
-  onTransfer: () => void;
-  onPlugins: () => void;
+  notebooks: Notebook[]; bookId: string|null; documentId:string|null; hidden:boolean; width:number; outlineOpen:boolean;
+  onHome:()=>void; onCollapse:()=>void; onSelect:(bookId:string,documentId?:string)=>void; onCreate:()=>void;
+  onSwitch:(anchor:HTMLElement)=>void; onMenu:(bookId:string,documentId:string|undefined,anchor:HTMLElement)=>void;
+  onTransfer:()=>void;onPlugins:()=>void;onOutline:()=>void;onResize:(width:number)=>void;
 }
-export default function Sidebar(props: Props) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-heading">
-        <h1>笔记本</h1>
-        <button
-          className="icon-button add-button"
-          title="新建"
-          aria-label="新建"
-          onClick={props.onCreate}
-        >
-          <Plus size={20} />
-        </button>
-      </div>
-      <nav className="notebook-tree" aria-label="笔记本和文档">
-        {props.notebooks.map((book) => (
-          <div className="notebook-group" key={book.id}>
-            <div className="tree-row notebook-row">
-              <button
-                className="tree-label"
-                onClick={() => {
-                  setCollapsed((old) => {
-                    const next = new Set(old);
-                    next.has(book.id)
-                      ? next.delete(book.id)
-                      : next.add(book.id);
-                    return next;
-                  });
-                  props.onSelect(book.id);
-                }}
-                aria-expanded={!collapsed.has(book.id)}
-              >
-                {collapsed.has(book.id) ? (
-                  <ChevronRight size={16} />
-                ) : (
-                  <ChevronDown size={16} />
-                )}
-                <Folder size={20} />
-                <span>{book.name}</span>
-              </button>
-              <button
-                className="icon-button row-menu"
-                aria-label={`${book.name}的操作`}
-                onClick={() => props.onMenu(book.id)}
-              >
-                <MoreHorizontal size={17} />
-              </button>
-            </div>
-            {!collapsed.has(book.id) &&
-              book.documents.map((doc) => (
-                <div
-                  className={`tree-row document-row ${doc.id === props.activeId ? "active" : ""}`}
-                  key={doc.id}
-                >
-                  <button
-                    className="tree-label"
-                    aria-current={
-                      doc.id === props.activeId ? "page" : undefined
-                    }
-                    onClick={() => props.onSelect(book.id, doc.id)}
-                  >
-                    <FileText size={18} />
-                    <span>{doc.title}</span>
-                  </button>
-                  <button
-                    className="icon-button row-menu"
-                    aria-label={`${doc.title}的操作`}
-                    onClick={() => props.onMenu(book.id, doc.id)}
-                  >
-                    <MoreHorizontal size={17} />
-                  </button>
-                </div>
-              ))}
-          </div>
-        ))}
-      </nav>
-      <div className="sidebar-footer">
-        <button onClick={props.onTransfer}>
-          <ArrowDownUp size={19} />
-          <span>导入 / 导出</span>
-        </button>
-        <button onClick={props.onPlugins}>
-          <Puzzle size={19} />
-          <span>插件</span>
-        </button>
-      </div>
-    </aside>
-  );
+export default function Sidebar(p:Props){
+ const book=p.notebooks.find(b=>b.id===p.bookId);const drag=useRef<{x:number,width:number}|null>(null);
+ return <aside className="sidebar" inert={p.hidden} aria-hidden={p.hidden||undefined}>
+  <div className="sidebar-inner"><div className="sidebar-brand" data-tauri-drag-region><span className="brand"><img src="/typepro-logo.png" alt=""/>TypePro</span><button className="icon-button" onClick={p.onCollapse} aria-label="收起目录" title="收起目录 · ⌘ ⇧ L"><ChevronsLeft size={18}/></button></div>
+  <button className="side-home" onClick={p.onHome}><Home size={17}/>全部笔记</button>
+  <button className="book-selector" onClick={e=>p.onSwitch(e.currentTarget)}><img src="/typepro-logo.png" alt=""/><span>{book?.name||'笔记'}</span><ChevronDown size={14}/></button>
+  <div className="side-tabs"><span className="active"><FileText size={16}/>文档</span><button onClick={p.onOutline} className={p.outlineOpen?'active':''} aria-pressed={p.outlineOpen} title="文档大纲 · ⌘ ⌃ 1"><ListTree size={16}/>大纲</button></div>
+  <nav className="tree" aria-label="文档目录">{book?.documents.map(d=><div className={`tree-row ${d.id===p.documentId?'selected':''}`} key={d.id}><button className="tree-label" onClick={()=>p.onSelect(book.id,d.id)} aria-current={d.id===p.documentId?'page':undefined}><FileText size={16}/><span>{d.title}</span></button><button className="icon-button doc-menu" aria-label={`${d.title} 操作`} onClick={e=>p.onMenu(book.id,d.id,e.currentTarget)}><MoreHorizontal size={16}/></button></div>)}<button className="tree-row new-doc" onClick={p.onCreate}><Plus size={16}/>新建文档</button></nav>
+  <div className="side-bottom"><button onClick={p.onPlugins}><Puzzle size={17}/>插件</button><button onClick={p.onTransfer}><ArrowDownUp size={17}/>导入 / 导出</button></div></div>
+  <div className="resize-handle" role="separator" aria-label="调整侧栏宽度" aria-orientation="vertical" aria-valuenow={p.width} aria-valuemin={210} aria-valuemax={380} tabIndex={0}
+   onPointerDown={e=>{drag.current={x:e.clientX,width:p.width};e.currentTarget.setPointerCapture(e.pointerId);}}
+   onPointerMove={e=>{if(drag.current)p.onResize(Math.max(210,Math.min(380,drag.current.width+e.clientX-drag.current.x)));}}
+   onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}
+   onKeyDown={e=>{if(['ArrowLeft','ArrowRight','Home'].includes(e.key)){e.preventDefault();p.onResize(e.key==='Home'?264:Math.max(210,Math.min(380,p.width+(e.key==='ArrowLeft'?-16:16))));}}}/>
+ </aside>;
 }

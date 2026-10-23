@@ -14,7 +14,7 @@ export async function command<T>(
     const { previewCommand } = await import("./preview");
     return previewCommand(name, args) as Promise<T>;
   }
-  throw new Error("请通过笔记应用打开。");
+  throw new Error("请通过 TypePro 应用打开。");
 }
 export const loadWorkspace = () => command<Workspace>("load_workspace");
 export const saveWorkspace = (workspace: Workspace) =>

@@ -1,6 +1,6 @@
 # 构建记录
 
-交付版本：1.0.0，2026-10-20。以下为本次实际使用的版本。
+已构建版本：TypePro 1.1.0。以下环境已实际生成 Apple Silicon DMG 与包含 ARM64、ARMv7 的个人签名 APK。Mac 应用签名和 DMG 完整性校验通过，APK 签名及 16KB 对齐校验通过；独立 Android 16 模拟器由 1.0.0 覆盖升级成功，旧笔记与插件保留。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -26,7 +26,7 @@ bash scripts/package-dmg.sh
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「笔记」拖入 Applications。
+应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。默认输出为 `TypePro-1.1.0-mac-arm64.dmg`。
 
 ## Android
 
@@ -48,7 +48,7 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-本次 alias 为 `notebook`。沿用相同密钥可以覆盖升级本次 APK。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.1.0 的 Android versionCode 明确配置为 `1001000`，高于 1.0.0 的 `1000000`；CLI 构建时重新生成 `tauri.properties`。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
@@ -61,8 +61,8 @@ APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app
 ## 检查安装包
 
 ```sh
-codesign --verify --deep --strict src-tauri/target/release/bundle/macos/笔记.app
-hdiutil verify 笔记-1.0.0-mac-arm64.dmg
+codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
+hdiutil verify TypePro-1.1.0-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```

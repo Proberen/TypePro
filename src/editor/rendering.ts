@@ -15,6 +15,43 @@ export const MARKDOWN_OPTIONS = {
   sup: true,
 };
 const HIGHLIGHT_OPTIONS = { enable: true, style: 'github', defaultLang: '', lineNumber: false };
+const CODE_LANGUAGES = [
+  ['typescript', 'TypeScript'], ['javascript', 'JavaScript'], ['python', 'Python'], ['java', 'Java'],
+  ['json', 'JSON'], ['css', 'CSS'], ['xml', 'HTML'], ['bash', 'Shell'], ['sql', 'SQL'],
+  ['rust', 'Rust'], ['go', 'Go'], ['markdown', 'Markdown'], ['mermaid', 'Mermaid'], ['plaintext', '纯文本'],
+];
+
+function createCodeBox(text: string, language: string, editable: boolean) {
+  const box = document.createElement('div');
+  box.className = 'note-codebox';
+  const header = document.createElement('div');
+  header.className = 'note-codehead';
+  const select = document.createElement('select');
+  select.dataset.codeLanguage = 'true';
+  select.setAttribute('aria-label', '代码语言');
+  select.disabled = !editable;
+  const name = language || 'plaintext';
+  const languages = CODE_LANGUAGES.some(([id]) => id === name) ? CODE_LANGUAGES : [...CODE_LANGUAGES, [name, name]];
+  for (const [id, label] of languages) {
+    const option = document.createElement('option');
+    option.value = id; option.textContent = label; select.append(option);
+  }
+  select.value = name;
+  const copy = document.createElement('button');
+  copy.type = 'button'; copy.dataset.copyCode = 'true'; copy.title = '复制代码'; copy.setAttribute('aria-label', '复制代码');
+  copy.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="8" width="12" height="13" rx="2"/><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2"/></svg>';
+  header.append(select, copy);
+  const content = document.createElement('div');
+  content.className = 'note-code-content';
+  const gutter = document.createElement('div');
+  gutter.className = 'note-line-gutter'; gutter.setAttribute('aria-hidden', 'true');
+  gutter.textContent = text.replace(/\n$/, '').split('\n').map((_, index) => index + 1).join('\n');
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.className = `language-${name}`; code.textContent = text;
+  pre.append(code); content.append(gutter, pre); box.append(header, content);
+  return box;
+}
 
 interface MermaidEngine {
   initialize(options: Record<string, unknown>): void;
@@ -112,6 +149,7 @@ export function enhanceEditor(root: HTMLElement) {
     if (!source || !code) return;
     const text = code.textContent || '';
     const language = [...code.classList].find((name) => name.startsWith('language-')) || '';
+    source.dataset.lineNumbers = text.replace(/\n$/, '').split('\n').map((_, index) => index + 1).join('\n');
     let preview = block.querySelector<HTMLElement>(':scope > .note-code-preview');
     if (preview?.dataset.source === text && preview.dataset.language === language) return;
     if (!preview) {
@@ -130,12 +168,7 @@ export function enhanceEditor(root: HTMLElement) {
       void renderDiagram(preview, text);
     } else {
       preview.classList.remove('note-diagram');
-      const pre = document.createElement('pre');
-      const displayCode = document.createElement('code');
-      displayCode.className = language;
-      displayCode.textContent = text;
-      pre.append(displayCode);
-      preview.append(pre);
+      preview.append(createCodeBox(text, language.replace(/^language-/, ''), true));
       Vditor.highlightRender(HIGHLIGHT_OPTIONS, preview, EDITOR_ASSETS);
     }
   });
@@ -150,6 +183,10 @@ export async function renderReading(root: HTMLElement, markdown: string) {
     emojiPath: `${EDITOR_ASSETS}/dist/images/emoji`,
   });
   root.innerHTML = html;
+  root.querySelectorAll<HTMLElement>('pre > code').forEach(code => {
+    const language = [...code.classList].find(name => name.startsWith('language-'))?.replace(/^language-/, '') || '';
+    if (language !== 'mermaid') code.parentElement?.replaceWith(createCodeBox(code.textContent || '', language, false));
+  });
   Vditor.highlightRender(HIGHLIGHT_OPTIONS, root, EDITOR_ASSETS);
   Vditor.mathRender(root, { cdn: EDITOR_ASSETS, math: { engine: 'KaTeX', inlineDigit: true } });
   root.querySelectorAll<HTMLElement>('.language-mermaid').forEach((element) => {

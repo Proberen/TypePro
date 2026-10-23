@@ -30,6 +30,8 @@ pub struct Document {
 pub struct Notebook {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
     pub documents: Vec<Document>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -88,6 +90,8 @@ struct DocumentIndex {
 struct NotebookIndex {
     id: String,
     name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cover: Option<String>,
     documents: Vec<DocumentIndex>,
 }
 #[derive(Serialize, Deserialize)]
@@ -133,6 +137,7 @@ fn index_of(workspace: &Workspace) -> Index {
             .map(|n| NotebookIndex {
                 id: n.id.clone(),
                 name: n.name.clone(),
+                cover: n.cover.clone(),
                 documents: n
                     .documents
                     .iter()
@@ -159,6 +164,7 @@ fn validate(workspace: &Workspace) -> Result<()> {
     let mut total = 0usize;
     for notebook in &workspace.notebooks {
         valid_id(&notebook.id)?;
+        cover_asset(notebook.cover.as_deref())?;
         if !ids.insert(&notebook.id) || notebook.name.len() > 1024 {
             return Err("笔记本标识重复或名称过长".into());
         }
@@ -249,6 +255,19 @@ fn asset_references(markdown: &str) -> BTreeSet<String> {
         .find_iter(markdown)
         .map(|m| m.as_str().to_string())
         .collect()
+}
+fn cover_asset(cover: Option<&str>) -> Result<Option<&str>> {
+    let Some(cover) = cover else {
+        return Ok(None);
+    };
+    if matches!(
+        cover,
+        "preset:0" | "preset:1" | "preset:2" | "preset:3" | "preset:4" | "preset:5"
+    ) {
+        return Ok(None);
+    }
+    asset_name(cover).map_err(|_| "无效的笔记本封面".to_string())?;
+    Ok(Some(cover))
 }
 fn extension(name: &str) -> String {
     Path::new(name)
@@ -345,6 +364,7 @@ impl Storage {
             workspace.notebooks.push(Notebook {
                 id: notebook.id,
                 name: notebook.name,
+                cover: notebook.cover,
                 documents,
             });
         }
@@ -469,6 +489,9 @@ impl Storage {
         let mut references = BTreeSet::new();
         let mut total = 0usize;
         for notebook in &workspace.notebooks {
+            if let Some(reference) = cover_asset(notebook.cover.as_deref())? {
+                references.insert(reference.to_string());
+            }
             for document in &notebook.documents {
                 total += document.markdown.len();
                 zip.start_file(document_path(&notebook.id, &document.id), options)
@@ -538,6 +561,7 @@ impl Storage {
                     workspace.notebooks.push(Notebook {
                         id: id(),
                         name: "导入的笔记".into(),
+                        cover: None,
                         documents: vec![],
                     });
                     workspace.notebooks.last_mut().unwrap()
@@ -610,6 +634,9 @@ impl Storage {
         let mut references = BTreeSet::new();
         for notebook in manifest.notebooks {
             valid_id(&notebook.id)?;
+            if let Some(reference) = cover_asset(notebook.cover.as_deref())? {
+                references.insert(reference.to_string());
+            }
             let mut documents = vec![];
             for document in notebook.documents {
                 valid_id(&document.id)?;
@@ -631,6 +658,7 @@ impl Storage {
             imported.notebooks.push(Notebook {
                 id: notebook.id,
                 name: notebook.name,
+                cover: notebook.cover,
                 documents,
             });
         }
@@ -640,12 +668,19 @@ impl Storage {
             let name = asset_name(&reference)?;
             let data = files
                 .get(&format!("assets/{name}"))
-                .ok_or("ZIP 缺少文档引用的附件")?;
+                .ok_or("ZIP 缺少引用的附件")?;
             let asset = self.save_asset(name, data)?;
             replacements.insert(reference, asset.path);
         }
         for mut notebook in imported.notebooks {
             notebook.id = id();
+            if let Some(replacement) = notebook
+                .cover
+                .as_ref()
+                .and_then(|cover| replacements.get(cover))
+            {
+                notebook.cover = Some(replacement.clone());
+            }
             for document in &mut notebook.documents {
                 document.id = id();
                 for (old, new) in &replacements {
@@ -672,6 +707,7 @@ mod tests {
             notebooks: vec![Notebook {
                 id: id(),
                 name: "工作".into(),
+                cover: None,
                 documents: vec![Document {
                     id: id(),
                     title: "第一篇".into(),
@@ -751,6 +787,126 @@ mod tests {
         let asset = asset_references(imported).into_iter().next().unwrap();
         assert_ne!(asset, a.path);
         assert_eq!(s.resolve_asset(&asset).unwrap(), a.url);
+    }
+    #[test]
+    fn covers_roundtrip_with_shared_and_cover_only_assets() {
+        let (_dir, s) = store();
+        let mut w = sample();
+        let asset = s.save_asset("cover.png", b"cover bytes").unwrap();
+        w.notebooks[0].cover = Some(asset.path.clone());
+        w.notebooks[0].documents[0].markdown = format!("![shared]({})", asset.path);
+        w.notebooks.push(Notebook {
+            id: id(),
+            name: "空笔记本".into(),
+            cover: Some(asset.path.clone()),
+            documents: vec![],
+        });
+        s.save(&w).unwrap();
+        assert_eq!(s.load().unwrap(), w);
+        let bundle = s.export(None, None).unwrap();
+        let archive = ZipArchive::new(Cursor::new(&bundle.bytes)).unwrap();
+        assert_eq!(
+            archive
+                .file_names()
+                .filter(|name| name.starts_with("assets/"))
+                .count(),
+            1
+        );
+        let merged = s.import("covers.zip", &bundle.bytes, None).unwrap();
+        assert_eq!(merged.notebooks.len(), 4);
+        assert_eq!(&merged.notebooks[..2], &w.notebooks);
+        let imported_cover = merged.notebooks[2].cover.as_deref().unwrap();
+        assert_ne!(imported_cover, asset.path);
+        assert_eq!(merged.notebooks[3].cover.as_deref(), Some(imported_cover));
+        assert!(merged.notebooks[3].documents.is_empty());
+        assert_eq!(s.resolve_asset(imported_cover).unwrap(), asset.url);
+        assert!(merged.notebooks[2].documents[0]
+            .markdown
+            .contains(imported_cover));
+        assert_eq!(s.load().unwrap(), merged);
+    }
+    #[test]
+    fn all_preset_covers_survive_storage_and_zip() {
+        let (_dir, s) = store();
+        let mut w = Workspace::default();
+        for preset in 0..=5 {
+            w.notebooks.push(Notebook {
+                id: id(),
+                name: format!("封面 {preset}"),
+                cover: Some(format!("preset:{preset}")),
+                documents: vec![],
+            });
+        }
+        s.save(&w).unwrap();
+        assert_eq!(s.load().unwrap(), w);
+        let bundle = s.export(None, None).unwrap();
+        let (_target_dir, target) = store();
+        let imported = target.import("presets.zip", &bundle.bytes, None).unwrap();
+        for (original, imported) in w.notebooks.iter().zip(&imported.notebooks) {
+            assert_eq!(original.cover, imported.cover);
+            assert_ne!(original.id, imported.id);
+        }
+    }
+    #[test]
+    fn legacy_workspace_index_and_zip_without_cover_stay_compatible() {
+        let (_dir, s) = store();
+        let w = sample();
+        let legacy_json = serde_json::to_value(&w).unwrap();
+        assert!(legacy_json["notebooks"][0].get("cover").is_none());
+        let legacy_workspace: Workspace = serde_json::from_value(legacy_json).unwrap();
+        s.save(&legacy_workspace).unwrap();
+        let index: serde_json::Value =
+            serde_json::from_slice(&fs::read(s.root.join("index.json")).unwrap()).unwrap();
+        assert!(index["notebooks"][0].get("cover").is_none());
+        assert_eq!(s.load().unwrap(), w);
+        let bundle = s.export(None, None).unwrap();
+        let (_target_dir, target) = store();
+        let imported = target.import("legacy.zip", &bundle.bytes, None).unwrap();
+        assert_eq!(imported.notebooks[0].cover, None);
+        assert_eq!(
+            imported.notebooks[0].documents[0].markdown,
+            w.notebooks[0].documents[0].markdown
+        );
+    }
+    #[test]
+    fn invalid_or_missing_cover_assets_do_not_replace_existing_notes() {
+        let (_dir, s) = store();
+        let w = sample();
+        s.save(&w).unwrap();
+        let missing_asset = format!("../../assets/{}.png", id());
+        for cover in [
+            "preset:6",
+            "preset:01",
+            "",
+            "https://example.com/cover.png",
+            "../../assets/../../index.json",
+            &missing_asset,
+        ] {
+            let mut invalid = sample();
+            invalid.notebooks[0].cover = Some(cover.into());
+            invalid.notebooks[0].documents.clear();
+            if cover != missing_asset {
+                assert!(s.save(&invalid).is_err());
+            }
+            let manifest = Manifest {
+                format: "local-notebook".into(),
+                version: 1,
+                notebooks: index_of(&invalid).notebooks,
+            };
+            let mut zip = ZipWriter::new(Cursor::new(vec![]));
+            zip.start_file("manifest.json", SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(&serde_json::to_vec(&manifest).unwrap())
+                .unwrap();
+            assert!(s
+                .import(
+                    "invalid-cover.zip",
+                    &zip.finish().unwrap().into_inner(),
+                    None
+                )
+                .is_err());
+            assert_eq!(s.load().unwrap(), w);
+        }
     }
     #[test]
     fn rejects_traversal_and_keeps_existing_state() {

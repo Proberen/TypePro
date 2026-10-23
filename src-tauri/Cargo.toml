@@ -1,7 +1,7 @@
 [package]
 name = "local-notebook"
-version = "1.0.0"
-description = "Private local Markdown notebook"
+version = "1.1.0"
+description = "TypePro local Markdown notebook"
 authors = ["Local Notebook"]
 edition = "2021"
 
