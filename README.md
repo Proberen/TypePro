@@ -1,8 +1,8 @@
-# TypePro 1.4.0
+# TypePro 1.5.0
 
 本地 Markdown 笔记软件。Apple Silicon Mac 与 Android 共用编辑器和插件 API，使用系统 WebView，不捆绑 Chromium。
 
-1.4.0 新增 GitHub 插件市场，已生成 Apple Silicon DMG 与 Android APK。发布、测试和安装包检查记录见 [构建记录](docs/BUILD.md)。
+1.5.0 新增每日打卡、AI 助手及插件安装与数据同步。DMG／APK 已生成，两个新插件已完成公开市场发布；实际发布、测试和安装包检查记录见 [构建记录](docs/BUILD.md)。
 
 ## 使用
 
@@ -20,6 +20,8 @@
 - 可选「GitHub 同步」：每台设备首次通过 GitHub 设备授权，笔记与图片同步到账号下的私有 `typepro-notes` 仓库。默认前台每 5 分钟同步，可改为仅手动；离线编辑继续保存在本机。同文档冲突保留副本。内置 GitHub App 仅供 `Proberen` 账号使用；连接步骤、权限与其他账号配置见 [GitHub 同步](docs/GITHUB.md)。
 - 在「关于 TypePro」查看版本号、更新记录及升级说明。
 - 在「插件市场」搜索并安装公开插件，无需 GitHub 登录。进入市场、手动刷新及页面前台打开期间每分钟检查目录；更新由用户确认后执行。新插件默认停用，更新新增权限时需重新确认；ZIP／JSON 导入继续保留。发布方法见 [插件市场](docs/MARKET.md)，示例与 API 见 [插件文档](docs/PLUGINS.md)。
+- 启用「每日打卡」后，首页显示近一年编辑热力图，点击日期查看文档及 `+新增／−删除` 字数。统计启用后的人工正文变化，排除空白和 Markdown 标记；可识别的编辑撤销抵消原记录。同步、导入与 AI／插件自动写入不计入。
+- 启用「AI 助手」后，从首页或插件命令进入会话。默认支持 DeepSeek，填写本设备的 API Key 后获取模型列表，也可填写模型 id 或配置兼容 OpenAI 的 HTTPS 接口。支持多会话、停止生成、全局系统提示词和 Skill；读取相关笔记会发送给所选模型。创建或修改文档先显示差异，确认后写入；不提供任意本地文件或系统命令工具。
 
 Markdown 支持标题、段落、引用、列表、任务列表、表格、代码高亮、链接、图片、脚注、目录、数学公式和 Mermaid 图表。数学与图表资源随应用打包，可离线使用。外链图片仍需要对应网络地址可访问。HTML 会清理脚本及危险属性；不执行笔记内的 JavaScript，也不调用外部 PlantUML 等渲染服务。
 
@@ -42,15 +44,19 @@ workspace/
   assets/<asset-id>.<extension>
 ```
 
-保存使用串行写入、原子替换和恢复日志。导入分配新 ID，保留同名的原有笔记和导入笔记。笔记本封面保存在索引中，上传的本地封面图片随 ZIP 导出和导入；旧数据没有封面字段也可正常读取。ZIP 不包含插件代码和授权；其他设备需单独安装插件。
+保存使用串行写入、原子替换和恢复日志。导入分配新 ID，保留同名的原有笔记和导入笔记。笔记本封面保存在索引中，上传的本地封面图片随 ZIP 导出和导入；旧数据没有封面字段也可正常读取。笔记 ZIP 只携带笔记与附件，不包含插件安装清单、插件代码、插件数据或授权。
 
 Mac 新建笔记或「存储目录」中可为每本笔记选择独立的空文件夹，支持迁移与回到默认目录。每个目录含 `notebooks/<id>/<doc>.md` 和 `assets/`，保留 Markdown 的相对图片引用。迁移不删除旧文件；绝对路径仅记在本机 `locations.json`，不会写入 ZIP。手机版不提供自定义目录。
 
-GitHub 同步只包含笔记分组、文档、封面及正文引用的本地附件。插件代码和授权、自定义目录的绝对路径、主题、折叠等界面状态留在本机。两端各自选择存储位置，Markdown 的相对附件引用保持不变。同步凭据由原生层保存在 macOS 钥匙串或 Android Keystore 保护的加密存储中，不写入笔记仓库、ZIP 或浏览器存储。断开连接保留本地笔记与远端仓库。
+GitHub 同步包含笔记分组、文档、封面、正文引用的本地附件，以及插件安装清单、版本、卸载记录和插件数据。市场插件按锁定的版本与校验值重新下载；本地导入插件的 Manifest 与代码保存到私有笔记仓库。新设备恢复的插件默认停用，需在该设备确认权限后启用；远端卸载会移除本地安装，但保留插件数据。启用状态、授权、自定义目录绝对路径、主题和折叠等界面状态仍留在本机。
+
+打卡记录、AI 会话历史、模型设置、全局系统提示词与导入的 Skill 随插件数据同步。API Key 每台设备单独填写，由原生层保存在 macOS 钥匙串或 Android Keystore 保护的加密存储中，不进入 Workspace、GitHub 或 ZIP；模型接口地址变更后需重新填写 Key。GitHub 授权凭据也仅保存在本机安全存储。断开连接保留本地内容与远端仓库。
+
+插件数据存入私库的 `.typepro/extensions.json`，由清单引用。首次同步这些数据前，请将 Mac 与 Android 都升级到 1.5.0；1.4.x 不能读取包含该扩展字段的新远端清单。旧笔记仓库仍可由 1.5.0 读取。
 
 TypePro 沿用原「笔记」应用的标识和数据目录。Android 升级需沿用原签名密钥与包名，覆盖安装保留原有笔记。
 
-公开插件市场固定使用独立仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins) 的目录和 Release 安装包，不读取私有笔记仓库，也不使用笔记同步凭据。安装后的插件、启用状态和授权仅保存在当前设备，不随 GitHub 笔记同步或 ZIP 传递。
+公开插件市场固定使用独立仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins) 的目录和 Release 安装包，不读取私有笔记仓库，也不使用笔记同步凭据。1.5.0 使用 `catalog-v2.json`，同时继续支持 API 1 插件；旧版 `catalog.json` 仅包含 API 1 插件。API 2 提供插件 JSON 存储、首页打卡组件与宿主 AI 页面，插件脚本仍不能直接联网。
 
 ## 开发与构建
 
@@ -80,14 +86,15 @@ node --experimental-strip-types --test src/editor/editor.test.mjs src/editor/cod
 node --experimental-strip-types --test src/editor/code-format/*.test.mjs
 node --experimental-strip-types --test src/sync/merge.test.mjs
 node --experimental-strip-types --test src/plugins/market.test.mjs
+node --experimental-strip-types --test src/plugins/state.test.mjs src/plugins/restore.test.mjs src/activity/activity.test.mjs src/assistant/assistant.test.mjs
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-上述命令分别检查类型、Markdown 原文保留、选区／样式／折叠契约与流程图转换、同步合并、插件版本及更新权限、原生存储和导入导出。命令列表不代表本次已执行；1.4.0 尚未运行这些检查或构建安装包。实际构建、界面、系统文件选择器、平台 WebView 和真实 GitHub 授权验证结果以对应交付记录为准。
+上述命令分别检查类型、Markdown 原文保留、选区／样式／折叠契约与流程图转换、同步合并、插件版本及更新权限、原生存储和导入导出。命令列表不代表本次已全部执行；新增打卡、插件状态／恢复和 AI 模块附有测试源码，测试源码本身不代表通过。1.5.0 的实际检查、构建和未验证项由 [构建记录](docs/BUILD.md) 记录；界面、系统文件选择器、平台 WebView 和真实 GitHub／AI 服务的验收结果不能用静态审查或单元测试代替。
 
 ## 目录
 
-独立 NAS 服务开发目录为 [services/nas](services/nas/README.md)，提供 Docker 部署和网页同步记录列表，当前 App 尚未接入该服务。1.3.0 的可选云端同步使用 GitHub。
+独立 NAS 服务开发目录为 [services/nas](services/nas/README.md)，提供 Docker 部署和网页同步记录列表，当前 App 尚未接入该服务。应用的可选云端同步使用 GitHub。
 
 | 路径 | 职责 |
 | --- | --- |
@@ -98,10 +105,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 | `src/flow/` | 流程图绘制、Mermaid 解析与本地预览 |
 | `src/sync/` | GitHub 同步设置、前台调度、三方合并与远端模型校验 |
 | `src/plugins/`、`public/plugins/` | 插件市场、安装更新、权限、沙箱和宿主 API |
+| `src/activity/` | 人工编辑计数、撤销归属与首页热力图 |
+| `src/assistant/` | AI 会话、模型设置、笔记工具、差异确认和 Skill 导入 |
 | `src-tauri/src/` | 本地文件、恢复日志、导入导出、平台桥接 |
 | `src-tauri/src/github/` | GitHub 设备授权、专用私库校验、Git 数据接口与同步基线 |
 | `src-tauri/src/github_secrets.rs` | macOS 钥匙串与 Android 安全凭据桥接 |
 | `src-tauri/src/plugin_market.rs` | 固定公开目录、Release 下载、大小与 SHA-256 校验 |
+| `src-tauri/src/ai.rs`、`src-tauri/src/ai_secrets.rs` | 原生 AI 流式传输、取消和设备凭据 |
 | `src-tauri/gen/android/` | Android 原生工程 |
 | `docs/GITHUB.md`、`docs/CONTRACT.md` | GitHub 使用与限制、共享数据及原生接口契约 |
 | `docs/MARKET.md`、`docs/PLUGINS.md` | 插件发布、市场使用和插件 API |

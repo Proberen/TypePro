@@ -20,8 +20,11 @@ test('versions use numeric release and prerelease precedence without integer rou
 test('catalog validates manifest, package metadata, unique ids and exact public release origin', () => {
   const entry = entryFor();
   assert.deepEqual(parseMarketCatalog(catalog([entry])).plugins[0], entry);
+  const api2 = entryFor(manifest({ apiVersion: 2, permissions: ['storage', 'assistant', 'notes.read'] }));
+  assert.deepEqual(parseMarketCatalog(catalog([api2])).plugins[0], api2);
+  assert.throws(() => parseMarketCatalog(catalog([{ ...api2, apiVersion: 1 }])));
   assert.throws(() => parseMarketCatalog(catalog([entry, entry])), /重复/);
-  for (const override of [{ size: 0 }, { size: 2097153 }, { sha256: 'A'.repeat(64) }, { apiVersion: 2 }, { permissions: ['network'] }, { version: '01.0.0' }]) assert.throws(() => parseMarketCatalog(catalog([{ ...entry, ...override }])));
+  for (const override of [{ size: 0 }, { size: 2097153 }, { sha256: 'A'.repeat(64) }, { apiVersion: 3 }, { permissions: ['network'] }, { version: '01.0.0' }]) assert.throws(() => parseMarketCatalog(catalog([{ ...entry, ...override }])));
   for (const downloadUrl of ['http://github.com/Proberen/typepro-plugins/releases/download/v1/a.zip', 'https://example.com/a.zip', 'https://github.com/another/repo/releases/download/v1/a.zip', `${entry.downloadUrl}?token=secret`, `https://name@github.com${new URL(entry.downloadUrl).pathname}`]) assert.throws(() => parseMarketCatalog(catalog([{ ...entry, downloadUrl }])));
 });
 

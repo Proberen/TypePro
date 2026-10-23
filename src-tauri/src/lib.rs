@@ -3,6 +3,8 @@ mod github_secrets;
 mod plugin_market;
 mod storage;
 mod transfer;
+mod ai;
+mod ai_secrets;
 use github::{
     Authorization, AuthorizationPoll, Github, GithubStatus, PublishResult, ReadRemoteResult,
     RepositoryPreparation, SyncSnapshot, SyncWorkspace,
@@ -273,6 +275,11 @@ async fn plugin_market_download(
         .download(&id, &version, &sha256)
         .await
 }
+#[tauri::command]
+async fn plugin_market_restore(window: WebviewWindow, market: State<'_, PluginMarketService>, entry: plugin_market::CatalogPlugin) -> Response<Vec<u8>> {
+    if window.label() != "main" { return Err("窗口无权恢复插件".into()); }
+    market.0.as_ref().map_err(Clone::clone)?.restore(entry).await
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -281,6 +288,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(transfer::init())
         .plugin(github_secrets::init())
+        .plugin(ai_secrets::init())
+        .manage(ai::AiService::new())
         .setup(|app| {
             let data = app.path().app_data_dir()?;
             app.manage(GithubService(Github::new(data.join("github-sync"))));
@@ -293,6 +302,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             plugin_market_catalog,
             plugin_market_download,
+            plugin_market_restore,
+            ai::ai_configure_key,
+            ai::ai_key_status,
+            ai::ai_remove_key,
+            ai::ai_models,
+            ai::ai_chat,
+            ai::ai_cancel,
             github_status,
             github_configure,
             github_start_authorization,

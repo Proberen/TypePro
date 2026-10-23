@@ -202,3 +202,17 @@ test('workspace validation rejects duplicate parent/child IDs, traversal covers 
     workspace(book(1, Array.from({ length: 5001 }, (_, n) => document(n + 10)))),
   ]) assert.throws(() => parseSyncWorkspace(invalid));
 });
+
+
+test('plugin installation tombstones and independent plugin records merge alongside note edits', async () => {
+  const entry = (key, value, minute = 0, device = 100) => ({ pluginId: 'notebook.activity', key, value, updatedAt: `2026-10-22T00:0${minute}:00.000Z`, deviceId: id(device) });
+  const base = { ...workspace(book()), extensions: { entries: [entry('settings', { enabled: true })], installs: [] } };
+  const local = clone(base), remote = clone(base);
+  local.extensions.entries.push(entry('activity.mac', { added: 20, removed: 3 }, 1));
+  remote.extensions.entries.push(entry('activity.android', { added: 4, removed: 1 }, 2, 101));
+  find(local).markdown = 'edited on Mac';
+  const merged = await mergeWorkspaces(base, local, remote);
+  assert.equal(find(merged.workspace).markdown, 'edited on Mac');
+  assert.deepEqual(merged.workspace.extensions.entries.map(item => item.key), ['activity.android', 'activity.mac', 'settings']);
+  assert.deepEqual((await mergeWorkspaces(base, merged.workspace, remote)).workspace, merged.workspace);
+});

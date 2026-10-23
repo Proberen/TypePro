@@ -1,10 +1,11 @@
 use super::*;
-use crate::storage::{Document, Notebook};
+use crate::storage::{validate_extensions, Document, ExtensionState, Notebook, MAX_EXTENSIONS};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use sha1::{Digest, Sha1};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MANIFEST: &str = ".typepro/manifest.json";
+const EXTENSIONS: &str = ".typepro/extensions.json";
 const MAX_TOTAL: usize = 256 * 1024 * 1024;
 const MAX_FILES: usize = 10_000;
 #[derive(Serialize, Deserialize)]
@@ -14,6 +15,8 @@ struct Manifest {
     version: u8,
     notebooks: Vec<Book>,
     assets: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extensions: Option<String>,
     source: Source,
     synced_at: String,
 }
@@ -76,7 +79,7 @@ fn asset_path(value: &str) -> bool {
         && ext.bytes().all(|c| c.is_ascii_alphanumeric())
 }
 fn valid_file(value: &str) -> bool {
-    if value == MANIFEST || asset_path(value) {
+    if value == MANIFEST || value == EXTENSIONS || asset_path(value) {
         return true;
     }
     let pieces: Vec<_> = value.split('/').collect();
@@ -111,6 +114,9 @@ fn validate_snapshot(snapshot: &SyncSnapshot) -> Result<()> {
         || chrono::DateTime::parse_from_rfc3339(&snapshot.synced_at).is_err()
     {
         return Err("不支持的 TypePro 同步数据".into());
+    }
+    if let Some(extensions) = &snapshot.extensions {
+        validate_extensions(extensions)?;
     }
     let mut ids = BTreeSet::new();
     let mut count = 0;
@@ -506,6 +512,8 @@ impl Github {
                 .ok_or("GitHub 文件大小无效")?;
             let limit = if path == MANIFEST {
                 8 * 1024 * 1024
+            } else if path == EXTENSIONS {
+                MAX_EXTENSIONS
             } else if asset_path(path) {
                 32 * 1024 * 1024
             } else {
@@ -657,10 +665,25 @@ impl Github {
             });
             self.check_cancelled(generation)?;
         }
+        let extensions = if let Some(expected) = manifest.extensions {
+            let entry = files.get(EXTENSIONS).ok_or("远端插件数据不存在")?;
+            if entry.sha != expected {
+                return Err("远端插件数据与清单不一致".into());
+            }
+            let state: ExtensionState =
+                serde_json::from_slice(&self.blob(app, config, &token, repo, entry).await?)
+                    .map_err(|_| "远端插件数据无效，未覆盖本地数据")?;
+            validate_extensions(&state)?;
+            self.check_cancelled(generation)?;
+            Some(state)
+        } else {
+            None
+        };
         let snapshot = SyncSnapshot {
             format: manifest.format,
             version: manifest.version,
             notebooks,
+            extensions,
             source: manifest.source,
             synced_at: manifest.synced_at,
         };
@@ -699,6 +722,7 @@ impl Github {
             format: "typepro-github".into(),
             version: workspace.version,
             notebooks: workspace.notebooks,
+            extensions: workspace.extensions,
             source: Source {
                 device_id: config.device_id.clone(),
                 name: config.device_name.clone(),
@@ -717,6 +741,7 @@ impl Github {
         for file in files {
             if !valid_file(&file.path)
                 || file.path == MANIFEST
+                || file.path == EXTENSIONS
                 || content.contains_key(&file.path)
                 || file.bytes.len() > 32 * 1024 * 1024
             {
@@ -752,6 +777,15 @@ impl Github {
                 documents,
             });
         }
+        let extension_hash = if let Some(extensions) = &snapshot.extensions {
+            let bytes = serde_json::to_vec(extensions).map_err(|_| "无法生成插件同步文件")?;
+            let hash = blob_sha(&bytes);
+            total = total.saturating_add(bytes.len());
+            content.insert(EXTENSIONS.into(), bytes);
+            Some(hash)
+        } else {
+            None
+        };
         let assets = content
             .iter()
             .filter(|(p, _)| asset_path(p))
@@ -762,12 +796,14 @@ impl Github {
             version: snapshot.version,
             notebooks: books,
             assets,
+            extensions: extension_hash,
             source: snapshot.source.clone(),
             synced_at: snapshot.synced_at.clone(),
         };
         let manifest_bytes =
             serde_json::to_vec_pretty(&manifest).map_err(|_| "无法生成同步清单")?;
-        if manifest_bytes.len() > 8 * 1024 * 1024
+        if content.len() + 1 > MAX_FILES
+            || manifest_bytes.len() > 8 * 1024 * 1024
             || total.saturating_add(manifest_bytes.len()) > MAX_TOTAL
         {
             return Err("笔记清单超过同步容量限制".into());
@@ -784,8 +820,18 @@ impl Github {
             let owned = previous
                 .notebooks
                 .iter()
-                .flat_map(|book| book.documents.iter().map(|doc| (&doc.path, &doc.sha)))
-                .chain(previous.assets.iter());
+                .flat_map(|book| {
+                    book.documents
+                        .iter()
+                        .map(|doc| (doc.path.as_str(), &doc.sha))
+                })
+                .chain(
+                    previous
+                        .assets
+                        .iter()
+                        .map(|(path, hash)| (path.as_str(), hash)),
+                )
+                .chain(previous.extensions.iter().map(|hash| (EXTENSIONS, hash)));
             for (path, expected_sha) in owned {
                 if !valid_file(path)
                     || !existing
@@ -795,7 +841,10 @@ impl Github {
                     return Err("远端文件与 TypePro 清单不一致，未覆盖任何远端内容".into());
                 }
             }
-            if previous.notebooks == manifest.notebooks && previous.assets == manifest.assets {
+            if previous.notebooks == manifest.notebooks
+                && previous.assets == manifest.assets
+                && previous.extensions == manifest.extensions
+            {
                 let unchanged = SyncSnapshot {
                     source: previous.source,
                     synced_at: previous.synced_at,
@@ -841,7 +890,8 @@ impl Github {
                 .notebooks
                 .iter()
                 .flat_map(|b| b.documents.iter().map(|d| d.path.clone()))
-                .chain(previous.assets.into_keys());
+                .chain(previous.assets.into_keys())
+                .chain(previous.extensions.map(|_| EXTENSIONS.to_owned()));
             for path in previous_paths {
                 if !valid_file(&path) {
                     return Err("远端 TypePro 清单路径无效".into());
@@ -966,6 +1016,7 @@ mod tests {
                     updated_at: "2026-10-21T00:00:00Z".into(),
                 }],
             }],
+            extensions: None,
             source: Source {
                 device_id: "44444444-4444-4444-8444-444444444444".into(),
                 name: "Mac".into(),

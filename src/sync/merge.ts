@@ -1,5 +1,6 @@
 import type { Notebook, NoteDocument } from "../lib/types";
 import { parseSyncWorkspace, type SyncWorkspace } from "./model.ts";
+import { mergeExtensions } from "../plugins/state.ts";
 
 interface LocatedDocument { bookId: string; document: NoteDocument }
 interface Field<T> { value: T; conflict: boolean }
@@ -154,5 +155,7 @@ export async function mergeWorkspaces(
     }
   }
   // Conflict preservation can increase capacity; reject before any caller saves or publishes.
-  return { workspace: parseSyncWorkspace({ version: 1, notebooks: [...books.values()] }), conflicts };
+  const extensions = baseInput?.extensions || localInput.extensions || remoteInput?.extensions
+    ? { extensions: mergeExtensions(remoteInput ? baseInput?.extensions : undefined, localInput.extensions, remoteInput?.extensions) } : {};
+  return { workspace: parseSyncWorkspace({ version: 1, notebooks: [...books.values()], ...extensions }), conflicts };
 }

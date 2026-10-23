@@ -1,8 +1,11 @@
-import type { Notebook, NoteDocument, Workspace } from "../lib/types";
+import type { ExtensionState, Notebook, NoteDocument, Workspace } from "../lib/types";
+
+import { normalizeExtensions } from "../plugins/state.ts";
 
 export interface SyncWorkspace {
   version: 1;
   notebooks: Notebook[];
+  extensions?: ExtensionState;
 }
 
 export interface SyncSource {
@@ -87,13 +90,13 @@ function notebooks(value: unknown): Notebook[] {
 }
 
 export function parseSyncWorkspace(value: unknown): SyncWorkspace {
-  const workspace = object(value, ["version", "notebooks"], "同步笔记库");
+  const workspace = object(value, ["version", "notebooks", "extensions"], "同步笔记库");
   if (workspace.version !== 1) throw new Error("不支持的同步笔记版本");
-  return { version: 1, notebooks: notebooks(workspace.notebooks) };
+  return { version: 1, notebooks: notebooks(workspace.notebooks), ...(workspace.extensions === undefined ? {} : { extensions: normalizeExtensions(workspace.extensions) }) };
 }
 
 export function parseSyncSnapshot(value: unknown): SyncSnapshot {
-  const snapshot = object(value, ["format", "version", "notebooks", "source", "syncedAt"], "GitHub 同步快照");
+  const snapshot = object(value, ["format", "version", "notebooks", "extensions", "source", "syncedAt"], "GitHub 同步快照");
   if (snapshot.format !== "typepro-github" || snapshot.version !== 1) throw new Error("不支持的 GitHub 同步格式");
   const source = object(snapshot.source, ["deviceId", "name", "platform"], "同步来源");
   const deviceId = id(source.deviceId);
@@ -104,12 +107,12 @@ export function parseSyncSnapshot(value: unknown): SyncSnapshot {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(syncedAt) || !Number.isFinite(Date.parse(syncedAt)) || new Date(syncedAt).toISOString().slice(0, 19) !== syncedAt.slice(0, 19)) {
     throw new Error("同步时间格式无效");
   }
-  return { format: "typepro-github", version: 1, notebooks: notebooks(snapshot.notebooks), source: { deviceId, name, platform }, syncedAt };
+  return { format: "typepro-github", version: 1, notebooks: notebooks(snapshot.notebooks), ...(snapshot.extensions === undefined ? {} : { extensions: normalizeExtensions(snapshot.extensions) }), source: { deviceId, name, platform }, syncedAt };
 }
 
-/** Only document data crosses devices; plugins and device/UI settings stay local. */
+/** Credentials, execution grants and device/UI settings stay local. */
 export function toSyncWorkspace(workspace: Workspace | SyncWorkspace): SyncWorkspace {
-  return parseSyncWorkspace({ version: workspace.version, notebooks: workspace.notebooks.map(book => ({
+  return parseSyncWorkspace({ version: workspace.version, ...(workspace.extensions === undefined ? {} : { extensions: workspace.extensions }), notebooks: workspace.notebooks.map(book => ({
     id: book.id, name: book.name, ...(book.cover === undefined ? {} : { cover: book.cover }),
     documents: book.documents.map(document => ({ id: document.id, title: document.title, markdown: document.markdown, updatedAt: document.updatedAt })),
   })) });

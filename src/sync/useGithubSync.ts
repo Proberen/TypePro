@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { native, openLink } from "../lib/bridge";
-import type { Notebook, Workspace } from "../lib/types";
+import type { ExtensionState, Notebook, Workspace } from "../lib/types";
 import type { GithubSyncProps, GithubSyncSettings, GithubSyncState } from "./GithubSync";
 import { mergeWorkspaces } from "./merge";
 import { toSyncWorkspace, type SyncWorkspace } from "./model";
@@ -12,7 +12,7 @@ export interface GithubSyncOptions {
   collect: () => void;
   flush: () => Promise<void>;
   /** Must synchronously update current and preserve local plugins. */
-  apply: (notebooks: Notebook[]) => void;
+  apply: (notebooks: Notebook[], extensions?: ExtensionState) => void;
 }
 export type GithubSyncCallbacks = Omit<GithubSyncProps, "state" | "onClose">;
 
@@ -65,7 +65,7 @@ export async function synchronizeGithubWorkspace(
       // Collect debounced editor changes before comparing references as well.
       getOptions().collect();
       if (getOptions().current.current !== latest) continue;
-      if (!equal(local, reconciled.workspace)) getOptions().apply(reconciled.workspace.notebooks);
+      if (!equal(local, reconciled.workspace)) getOptions().apply(reconciled.workspace.notebooks, reconciled.workspace.extensions);
       conflicts += reconciled.conflicts;
       break;
     }

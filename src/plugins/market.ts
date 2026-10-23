@@ -77,5 +77,5 @@ export function prepareMarketInstall(entry: MarketPlugin, bytes: Uint8Array, pre
   const samePermissions = [...actual.permissions].sort().join('\n') === [...entry.permissions].sort().join('\n');
   if (actual.id !== entry.id || actual.version !== entry.version || actual.name !== entry.name || actual.apiVersion !== entry.apiVersion || (actual.description || '') !== (entry.description || '') || !samePermissions) throw new Error('安装包与插件目录不一致，请刷新后重试');
   if (previous && (previous.manifest.id !== entry.id || compareVersions(entry.version, previous.manifest.version) !== 1)) throw new Error('插件版本已变化，请刷新后重试');
-  return { ...plugin, enabled: !!previous?.enabled && addedPermissions(previous, entry).length === 0 };
+  return { ...plugin, market: { sha256: entry.sha256, size: entry.size, downloadUrl: entry.downloadUrl }, enabled: !!previous?.enabled && addedPermissions(previous, entry).length === 0 };
 }

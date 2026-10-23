@@ -7,6 +7,9 @@ export const PERMISSIONS = {
   'editor.insert': '向当前文档插入文字',
   commands: '添加工具菜单命令',
   panels: '显示文字面板',
+  storage: '保存并同步插件数据',
+  'home.activity': '在首页展示人工编辑打卡',
+  assistant: '使用 AI 会话、模型连接和笔记工具',
 } as const;
 
 export type PluginPermission = keyof typeof PERMISSIONS;
@@ -22,7 +25,8 @@ export function validatePlugin(input: unknown): InstalledPlugin {
   if (typeof m.id !== 'string' || !ID.test(m.id)) throw new Error('插件 id 应为 3–64 位小写字母、数字、点、短横线或下划线');
   if (typeof m.name !== 'string' || !m.name.trim() || m.name.length > 60) throw new Error('插件名称应为 1–60 个字符');
   if (typeof m.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(m.version) || m.version.length > 40) throw new Error('插件版本格式应为 1.0.0');
-  if (m.apiVersion !== 1) throw new Error('此插件的 API 版本不受支持');
+  if (m.apiVersion !== 1 && m.apiVersion !== 2) throw new Error('此插件需要更新的 TypePro 版本');
+  if (m.apiVersion === 1 && Array.isArray(m.permissions) && m.permissions.some(p => ['storage', 'home.activity', 'assistant'].includes(String(p)))) throw new Error('扩展能力需要 apiVersion: 2');
   if (m.description !== undefined && (typeof m.description !== 'string' || m.description.length > 300)) throw new Error('插件说明最多 300 个字符');
   if (!Array.isArray(m.permissions) || m.permissions.some(p => typeof p !== 'string' || !Object.prototype.hasOwnProperty.call(PERMISSIONS, p))) throw new Error('插件声明了不受支持的权限');
   if (typeof code !== 'string' || !code.trim() || new TextEncoder().encode(code).length > MAX_CODE) throw new Error('main.js 不能为空且不能超过 512 KB');
@@ -31,7 +35,7 @@ export function validatePlugin(input: unknown): InstalledPlugin {
       id: m.id,
       name: m.name.trim(),
       version: m.version,
-      apiVersion: 1,
+      apiVersion: m.apiVersion,
       ...(m.description ? { description: m.description as string } : {}),
       permissions: [...new Set(m.permissions as string[])],
     },

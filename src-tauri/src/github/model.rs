@@ -1,4 +1,4 @@
-use crate::storage::{Notebook, Workspace};
+use crate::storage::{ExtensionState, Notebook, Workspace};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct SyncWorkspace {
     pub version: u8,
     pub notebooks: Vec<Notebook>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<ExtensionState>,
 }
 impl SyncWorkspace {
     pub fn as_workspace(&self) -> Workspace {
@@ -13,6 +15,7 @@ impl SyncWorkspace {
             version: self.version,
             notebooks: self.notebooks.clone(),
             plugins: vec![],
+            extensions: self.extensions.clone(),
         }
     }
 }
@@ -29,6 +32,8 @@ pub struct SyncSnapshot {
     pub format: String,
     pub version: u8,
     pub notebooks: Vec<Notebook>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<ExtensionState>,
     pub source: Source,
     pub synced_at: String,
 }

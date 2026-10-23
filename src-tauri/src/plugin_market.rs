@@ -6,7 +6,7 @@ use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 type Result<T> = std::result::Result<T, String>;
 const CATALOG_URL: &str =
-    "https://raw.githubusercontent.com/Proberen/typepro-plugins/main/catalog.json";
+    "https://raw.githubusercontent.com/Proberen/typepro-plugins/main/catalog-v2.json";
 const MAX_CATALOG: usize = 1024 * 1024;
 const MAX_PACKAGE: usize = 2 * 1024 * 1024;
 const MAX_PLUGINS: usize = 500;
@@ -17,6 +17,9 @@ const PERMISSIONS: &[&str] = &[
     "editor.insert",
     "commands",
     "panels",
+    "storage",
+    "home.activity",
+    "assistant",
 ];
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -106,6 +109,24 @@ impl Market {
         // Re-read the trusted catalog and bind the install to the item the user confirmed.
         let catalog = self.catalog().await?;
         let plugin = select_plugin(&catalog, id, version, sha256)?;
+        self.download_pinned(plugin).await
+    }
+
+    // Restores a previously pinned immutable release, even after a newer version is published.
+    // The private sync snapshot supplies the pin; restored code stays disabled until approval.
+    pub async fn restore(&self, plugin: CatalogPlugin) -> Result<Vec<u8>> {
+        let catalog = Catalog { schema_version: 1, updated_at: chrono::Utc::now().to_rfc3339(), plugins: vec![plugin] };
+        let raw = serde_json::to_vec(&catalog).map_err(|_| "无法读取插件恢复记录")?;
+        let verified = parse_catalog(&raw)?;
+        let plugin = &verified.plugins[0];
+        let identity = format!("{}@{}", plugin.id, plugin.version);
+        let tag = format!("plugin-{:x}", Sha256::digest(identity.as_bytes()));
+        let expected = format!("https://github.com/Proberen/typepro-plugins/releases/download/{tag}/{}.zip", plugin.id);
+        if plugin.download_url != expected { return Err("插件恢复地址与版本不匹配".into()); }
+        self.download_pinned(plugin).await
+    }
+
+    async fn download_pinned(&self, plugin: &CatalogPlugin) -> Result<Vec<u8>> {
         let mut url = release_url(&plugin.download_url)?;
         for redirects in 0..=MAX_REDIRECTS {
             let response = self
@@ -187,7 +208,8 @@ fn parse_catalog(bytes: &[u8]) -> Result<Catalog> {
             || plugin.name.encode_utf16().count() > 60
             || plugin.version.len() > 40
             || !version.is_match(&plugin.version)
-            || plugin.api_version != 1
+            || !matches!(plugin.api_version, 1 | 2)
+            || (plugin.api_version == 1 && plugin.permissions.iter().any(|p| matches!(p.as_str(), "storage" | "home.activity" | "assistant")))
             || plugin
                 .description
                 .as_ref()
@@ -368,7 +390,7 @@ mod tests {
             ("version", json!("01.0.0")),
             ("version", json!("1.0.0-rc.01")),
             ("version", json!("1.0.0-a..b")),
-            ("apiVersion", json!(2)),
+            ("apiVersion", json!(3)),
             ("permissions", json!(["network"])),
             ("size", json!(MAX_PACKAGE + 1)),
             ("size", json!(0)),
@@ -386,6 +408,12 @@ mod tests {
         let parsed = parse_catalog(&catalog(vec![plugin])).unwrap();
         assert_eq!(parsed.plugins[0].name, "日期工具");
         assert_eq!(parsed.plugins[0].permissions, ["commands"]);
+        let mut plugin = entry();
+        plugin["apiVersion"] = json!(2);
+        plugin["permissions"] = json!(["storage", "assistant", "notes.read"]);
+        assert!(parse_catalog(&catalog(vec![plugin.clone()])).is_ok());
+        plugin["apiVersion"] = json!(1);
+        assert!(parse_catalog(&catalog(vec![plugin])).is_err());
         let mut plugin = entry();
         plugin["version"] = json!("1.0.0-rc.10");
         assert!(parse_catalog(&catalog(vec![plugin])).is_ok());

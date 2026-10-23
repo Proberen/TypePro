@@ -47,10 +47,59 @@ pub struct PluginManifest {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct PluginMarket {
+    pub sha256: String,
+    pub size: usize,
+    #[serde(rename = "downloadUrl")]
+    pub download_url: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct Plugin {
     pub manifest: PluginManifest,
     pub code: String,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market: Option<PluginMarket>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExtensionEntry {
+    #[serde(rename = "pluginId")]
+    pub plugin_id: String,
+    pub key: String,
+    pub value: serde_json::Value,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    #[serde(rename = "deviceId")]
+    pub device_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginInstallation {
+    pub id: String,
+    pub manifest: PluginManifest,
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
+    pub updated_at: String,
+    pub device_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExtensionState {
+    pub entries: Vec<ExtensionEntry>,
+    pub installs: Vec<PluginInstallation>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -58,6 +107,8 @@ pub struct Workspace {
     pub version: u8,
     pub notebooks: Vec<Notebook>,
     pub plugins: Vec<Plugin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<ExtensionState>,
 }
 impl Default for Workspace {
     fn default() -> Self {
@@ -65,6 +116,7 @@ impl Default for Workspace {
             version: 1,
             notebooks: vec![],
             plugins: vec![],
+            extensions: None,
         }
     }
 }
@@ -124,6 +176,8 @@ struct Index {
     version: u8,
     notebooks: Vec<NotebookIndex>,
     plugins: Vec<Plugin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extensions: Option<ExtensionState>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -152,6 +206,174 @@ fn valid_id(value: &str) -> Result<()> {
 fn document_path(notebook: &str, document: &str) -> String {
     format!("notebooks/{notebook}/{document}.md")
 }
+pub(crate) const MAX_EXTENSIONS: usize = 32 * 1024 * 1024;
+fn plugin_identifier(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (3..=64).contains(&bytes.len())
+        && bytes[0].is_ascii_lowercase()
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(b))
+        && !matches!(value, "__proto__" | "prototype" | "constructor")
+}
+fn extension_time(value: &str, device: &str) -> Result<()> {
+    valid_id(device)?;
+    let parsed = chrono::DateTime::parse_from_rfc3339(value).map_err(|_| "插件同步时间无效")?;
+    if value.len() > 40
+        || !Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$")
+            .unwrap()
+            .is_match(value)
+        || parsed
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            .get(..19)
+            != value.get(..19)
+    {
+        return Err("插件同步时间无效".into());
+    }
+    Ok(())
+}
+fn extension_json(value: &serde_json::Value, depth: usize) -> Result<()> {
+    if depth > 64 {
+        return Err("插件数据嵌套过深".into());
+    }
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                extension_json(item, depth + 1)?;
+            }
+        }
+        serde_json::Value::Object(items) => {
+            for (key, item) in items {
+                if matches!(key.as_str(), "__proto__" | "prototype" | "constructor") {
+                    return Err("插件数据含保留字段".into());
+                }
+                extension_json(item, depth + 1)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+fn validate_plugin_manifest(manifest: &PluginManifest) -> Result<()> {
+    if !plugin_identifier(&manifest.id)
+        || manifest.name.trim().is_empty()
+        || manifest.name.chars().count() > 60
+        || manifest.version.len() > 40
+        || !Regex::new(r"^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$")
+            .unwrap()
+            .is_match(&manifest.version)
+        || ![1, 2].contains(&manifest.api_version)
+        || manifest
+            .description
+            .as_ref()
+            .is_some_and(|s| s.chars().count() > 300)
+        || manifest.permissions.len() > 64
+    {
+        return Err("同步插件清单无效".into());
+    }
+    let mut permissions = BTreeSet::new();
+    for permission in &manifest.permissions {
+        if permission.is_empty()
+            || permission.len() > 64
+            || !permission.as_bytes()[0].is_ascii_lowercase()
+            || !permission
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b".-".contains(&b))
+            || !permissions.insert(permission)
+        {
+            return Err("同步插件权限无效".into());
+        }
+    }
+    Ok(())
+}
+pub(crate) fn validate_extensions(state: &ExtensionState) -> Result<()> {
+    if state.entries.len() > 20000
+        || state.installs.len() > 128
+        || serde_json::to_vec(state).map_err(err)?.len() > MAX_EXTENSIONS
+    {
+        return Err("插件数据超过同步容量限制".into());
+    }
+    let mut entries = BTreeSet::new();
+    for entry in &state.entries {
+        let key = entry.key.as_bytes();
+        if !plugin_identifier(&entry.plugin_id)
+            || key.is_empty()
+            || key.len() > 128
+            || !key[0].is_ascii_alphanumeric()
+            || !key
+                .iter()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(b))
+            || matches!(
+                entry.key.as_str(),
+                "__proto__" | "prototype" | "constructor"
+            )
+            || !entries.insert((&entry.plugin_id, &entry.key))
+            || (entry.deleted == Some(true) && !entry.value.is_null())
+        {
+            return Err("插件同步数据无效或重复".into());
+        }
+        extension_time(&entry.updated_at, &entry.device_id)?;
+        extension_json(&entry.value, 0)?;
+    }
+    let mut installs = BTreeSet::new();
+    for install in &state.installs {
+        validate_plugin_manifest(&install.manifest)?;
+        extension_time(&install.updated_at, &install.device_id)?;
+        if install.id != install.manifest.id || !installs.insert(&install.id) {
+            return Err("插件安装记录无效或重复".into());
+        }
+        match install.source.as_str() {
+            "local" => {
+                let code = install.code.as_deref().ok_or("本地插件缺少代码")?;
+                if code.len() > 512 * 1024
+                    || (install.deleted != Some(true) && code.trim().is_empty())
+                    || install.sha256.is_some()
+                    || install.size.is_some()
+                    || install.download_url.is_some()
+                {
+                    return Err("本地插件同步信息无效".into());
+                }
+            }
+            "market" => {
+                let hash = install.sha256.as_deref().ok_or("市场插件缺少校验信息")?;
+                let url = reqwest::Url::parse(
+                    install
+                        .download_url
+                        .as_deref()
+                        .ok_or("市场插件缺少下载地址")?,
+                )
+                .map_err(|_| "插件下载地址无效")?;
+                let path = url
+                    .path()
+                    .strip_prefix("/Proberen/typepro-plugins/releases/download/")
+                    .ok_or("插件下载地址不受支持")?;
+                let parts: Vec<_> = path.split('/').collect();
+                if install.code.is_some()
+                    || hash.len() != 64
+                    || !hash
+                        .bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+                    || !install.size.is_some_and(|s| s > 0 && s <= 2 * 1024 * 1024)
+                    || url.as_str().len() > 2048
+                    || url.scheme() != "https"
+                    || url.host_str() != Some("github.com")
+                    || url.port().is_some()
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || url.query().is_some()
+                    || url.fragment().is_some()
+                    || parts.len() != 2
+                    || parts.iter().any(|part| part.is_empty())
+                    || !parts[1].ends_with(".zip")
+                {
+                    return Err("市场插件同步信息无效".into());
+                }
+            }
+            _ => return Err("插件来源无效".into()),
+        }
+    }
+    Ok(())
+}
 fn index_of(workspace: &Workspace) -> Index {
     Index {
         version: workspace.version,
@@ -174,6 +396,7 @@ fn index_of(workspace: &Workspace) -> Index {
             })
             .collect(),
         plugins: workspace.plugins.clone(),
+        extensions: workspace.extensions.clone(),
     }
 }
 pub(crate) fn validate(workspace: &Workspace) -> Result<()> {
@@ -215,7 +438,7 @@ pub(crate) fn validate(workspace: &Workspace) -> Result<()> {
         return Err("插件数量过多".into());
     }
     for plugin in &workspace.plugins {
-        if plugin.manifest.api_version != 1
+        if ![1, 2].contains(&plugin.manifest.api_version)
             || plugin.code.len() > 2 * 1024 * 1024
             || plugin.manifest.id.len() > 128
             || plugin.manifest.id.is_empty()
@@ -223,6 +446,9 @@ pub(crate) fn validate(workspace: &Workspace) -> Result<()> {
         {
             return Err("插件记录无效".into());
         }
+    }
+    if let Some(extensions) = &workspace.extensions {
+        validate_extensions(extensions)?;
     }
     Ok(())
 }
@@ -708,6 +934,7 @@ impl Storage {
             version: 1,
             notebooks: vec![],
             plugins: index.plugins,
+            extensions: index.extensions,
         };
         let locations = self.locations()?;
         for notebook in index.notebooks {
@@ -1175,6 +1402,47 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_data_survives_local_saves_and_note_import_but_stays_out_of_note_archives() {
+        let (_directory, storage) = store();
+        let mut workspace = sample();
+        let extensions: ExtensionState = serde_json::from_value(serde_json::json!({
+            "entries": [{
+                "pluginId": "notebook.assistant", "key": "session.one", "value": {"text": "private conversation"},
+                "updatedAt": "2026-10-22T00:00:00.000Z", "deviceId": "11111111-1111-4111-8111-111111111111"
+            }], "installs": []
+        })).unwrap();
+        workspace.extensions = Some(extensions.clone());
+        storage.save(&workspace).unwrap();
+        assert_eq!(storage.load().unwrap().extensions, Some(extensions.clone()));
+        let archive = storage.export(None, None).unwrap();
+        let mut zip = ZipArchive::new(Cursor::new(&archive.bytes)).unwrap();
+        let mut manifest = String::new();
+        zip.by_name("manifest.json")
+            .unwrap()
+            .read_to_string(&mut manifest)
+            .unwrap();
+        assert!(!manifest.contains("extensions"));
+        assert!(!manifest.contains("private conversation"));
+        assert!(!zip.file_names().any(|name| name.contains("extensions")));
+        let imported = storage.import("notes.zip", &archive.bytes, None).unwrap();
+        assert_eq!(imported.extensions, Some(extensions));
+    }
+
+    #[test]
+    fn malformed_extension_json_and_duplicate_identities_are_rejected() {
+        let value = serde_json::json!({"entries": [{
+            "pluginId": "notebook.activity", "key": "settings", "value": {"constructor": "reserved"},
+            "updatedAt": "2026-10-22T00:00:00.000Z", "deviceId": "11111111-1111-4111-8111-111111111111"
+        }], "installs": []});
+        let mut extensions: ExtensionState = serde_json::from_value(value).unwrap();
+        assert!(validate_extensions(&extensions).is_err());
+        extensions.entries[0].value = serde_json::Value::Null;
+        validate_extensions(&extensions).unwrap();
+        extensions.entries.push(extensions.entries[0].clone());
+        assert!(validate_extensions(&extensions).is_err());
+    }
     fn store() -> (tempfile::TempDir, Storage) {
         let dir = tempfile::tempdir().unwrap();
         let storage = Storage::new(dir.path().to_path_buf());
@@ -1195,6 +1463,7 @@ mod tests {
                 }],
             }],
             plugins: vec![],
+            extensions: None,
         }
     }
     #[test]
@@ -1231,6 +1500,7 @@ mod tests {
             },
             code: "private-plugin-code".into(),
             enabled: true,
+            market: None,
         });
         s.save(&workspace).unwrap();
         let notebook_id = workspace.notebooks[0].id.clone();

@@ -33,7 +33,7 @@ export interface MarkdownEditorProps {
   markdown: string;
   mode: EditorMode;
   theme?: 'light' | 'dark';
-  onChange: (markdown: string) => void;
+  onChange: (markdown: string, edit?: { beforePlain: string; afterPlain: string; history?: 'undo' | 'redo' }) => void;
   onReady?: (api: EditorHandle) => void;
   onHeadingsChange?: (headings: EditorHeading[]) => void;
   onError?: (error: string) => void;
@@ -41,6 +41,7 @@ export interface MarkdownEditorProps {
   resolveAsset: (path: string) => Promise<string>;
   documentTools?: ReactNode;
   documentOutline?: ReactNode;
+  trackEdits?: boolean;
 }
 
 const TOOLBAR_COMMANDS: Record<string, string> = { bold: 'bold', italic: 'italic', strike: 'strike', inlinecode: 'inline-code', bullet: 'list', ordered: 'ordered-list', task: 'check', quote: 'quote' };
@@ -57,6 +58,9 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   const buffer = useRef(new SourceBuffer(props.markdown));
   const alive = useRef(true);
   const composing = useRef(false);
+  const historyIntent = useRef<'undo' | 'redo' | undefined>(undefined);
+  const previousSource = useRef(props.markdown);
+  const plainCache = useRef<{ source: string; text: string } | null>(null);
   const codeCollectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const codeHistoryDirty = useRef(false);
   const blockControls = useRef<ReturnType<typeof installBlockControls> | null>(null);
@@ -86,7 +90,19 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   }
   function publish() {
     setValue(buffer.current.value);
-    propsRef.current.onChange(buffer.current.value);
+    const plain = (markdown: string) => {
+      if (plainCache.current?.source === markdown) return plainCache.current.text;
+      const template = document.createElement('template');
+      template.innerHTML = editorRef.current!.vditor.lute.Md2HTML(markdown);
+      template.content.querySelectorAll('script,style').forEach(node => node.remove());
+      const text = (template.content.textContent || '').replace(/[\s\u200b\ufeff]/gu, '');
+      plainCache.current = { source: markdown, text };
+      return text;
+    };
+    const before = previousSource.current;
+    previousSource.current = buffer.current.value;
+    propsRef.current.onChange(buffer.current.value, editorRef.current && propsRef.current.trackEdits ? { beforePlain: plain(before), afterPlain: plain(buffer.current.value), history: historyIntent.current } : undefined);
+    historyIntent.current = undefined;
     getHeadings();
   }
   function collect() {
@@ -236,9 +252,10 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     if (id === 'slash') { openSlash(); return; }
     if (propsRef.current.mode === 'read' || composing.current) return;
     if (id === 'undo' || id === 'redo') {
+      historyIntent.current = id;
       const code = mountRef.current && selectedCodeEditor(mountRef.current);
-      if (code) { code.focus(); code[id](); collect(); return; }
-      rememberSelection(); restoreSelection(); editorRef.current?.vditor.toolbar?.elements?.[id]?.querySelector<HTMLButtonElement>('button')?.click(); collect(); return;
+      if (code) { code.focus(); code[id](); collect(); historyIntent.current = undefined; return; }
+      rememberSelection(); restoreSelection(); editorRef.current?.vditor.toolbar?.elements?.[id]?.querySelector<HTMLButtonElement>('button')?.click(); collect(); historyIntent.current = undefined; return;
     }
     commitCodeHistory();
     if (id === 'clear-color') { styleSelection(`color:${getComputedStyle(rootRef.current!).getPropertyValue('--body-text').trim() || '#3c4758'}`); return; }
@@ -406,6 +423,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       rememberSelection();
     };
     const beforeInput = (event: InputEvent) => {
+      historyIntent.current = event.inputType === 'historyUndo' ? 'undo' : event.inputType === 'historyRedo' ? 'redo' : undefined;
       if (!(event.target as HTMLElement).closest('.cm-editor') && !/^history(?:Undo|Redo)$/.test(event.inputType)) commitCodeHistory();
       if (event.data === '/' && !event.isComposing && event.inputType === 'insertText' && canOpenSlash()) { event.preventDefault(); event.stopPropagation(); openSlash(); }
     };
@@ -429,6 +447,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
 
   useLayoutEffect(() => {
     if (props.markdown === buffer.current.value) return;
+    previousSource.current = props.markdown;
     buffer.current.replace(props.markdown); setValue(props.markdown);
     if (editorRef.current) { editorRef.current.setValue(props.markdown); buffer.current.baseline(snapshotMarkdown(editorRef.current)); getHeadings(); }
   }, [props.markdown]);
@@ -455,6 +474,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     onCompositionStartCapture={event => { if (!(event.target as HTMLElement).closest('.cm-editor')) { commitCodeHistory(); composing.current = true; } }}
     onCompositionEndCapture={event => { if ((event.target as HTMLElement).closest('.cm-editor')) return; composing.current = false; requestAnimationFrame(() => { if (alive.current && propsRef.current.mode === 'edit') collect(); }); }}
     onKeyDownCapture={event => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) historyIntent.current = event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo';
       if (event.nativeEvent.isComposing || composing.current || (event.target as HTMLElement).closest('.editor-slash-menu,.editor-link-dialog,.editor-tools,.cm-editor,[role=dialog]')) return;
       const target = event.target as HTMLElement;
       const control = target.closest('[data-typepro-block-controls],[data-typepro-image-resize]');

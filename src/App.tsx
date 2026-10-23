@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { ArrowDownUp, BookOpen, CheckCircle2, ChevronDown, FileText, FolderOpen, GitBranch, Eye, Pencil, ListTree, Home as HomeIcon, Info, Keyboard, MoreHorizontal, Palette, PanelLeft, Plus, Puzzle, Search, Trash2, Upload, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { ArrowDownUp, BookOpen, CheckCircle2, ChevronDown, FileText, FolderOpen, GitBranch, Eye, Pencil, ListTree, Home as HomeIcon, Info, Keyboard, MoreHorizontal, Palette, PanelLeft, Plus, Puzzle, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Outline from './Outline';
 import NotebookLocations, { NotebookDirectoryField, directoryError } from './NotebookLocations';
@@ -14,10 +14,17 @@ import Shortcuts, { APP_SHORTCUTS, shortcutHint } from './Shortcuts';
 import MarkdownEditor, { type EditorHandle, type EditorHeading } from './editor/MarkdownEditor';
 import { matchesEditorShortcut } from './editor/commands';
 import { PluginHost, PluginManager } from './plugins';
+import type { AssistantPageDescriptor } from './plugins/PluginHost';
+import { extensionDeviceId, getPluginData, putPluginData, removePluginData, recordInstallation } from './plugins/state';
+import { restoreSyncedPlugins } from './plugins/restore';
+import { ActivityTracker, ActivityHeatmap } from './activity';
+import type { AssistantAdapter } from './assistant';
 import { command, native, openLink, pickFile, resolveAsset, saveAsset, uuid, writeTransfer, setNotebookLocation, loadWorkspace } from './lib/bridge';
 import { useWorkspace } from './lib/useWorkspace';
 import { recordRecentDocument } from './lib/recent';
-import type { EditorMode, NoteDocument, Notebook, TransferFile, Workspace } from './lib/types';
+import type { EditorMode, ExtensionState, JsonValue, NoteDocument, Notebook, TransferFile, Workspace } from './lib/types';
+
+const AssistantPage = lazy(() => import('./assistant').then(module => ({ default: module.AssistantPage })));
 
 type Dialog=null|{type:'theme'|'plugins'|'shortcuts'|'quick-open'|'about'|'github'}|{type:'transfer',bookId?:string,docId?:string}|{type:'name',kind:'book'|'document'|'rename-book'|'rename-document',bookId?:string,docId?:string,value:string}|{type:'cover',bookId:string}|{type:'delete',bookId:string,docId?:string}|{type:'move',bookId:string,docId:string};
 type Context={kind:'home'|'book'|'doc'|'books',bookId?:string,docId?:string,x:number,y:number};
@@ -26,27 +33,44 @@ function initialWidth(){try{return Math.max(210,Math.min(380,Number(localStorage
 export default function App(){
  const {workspace,current,update,flush,replacePersisted,status,error}=useWorkspace();
  const {settings,updateSettings,resetSettings,resolvedTheme}=useAppearance();
- const [view,setView]=useState<'home'|'editor'>('home');
+ const [view,setView]=useState<'home'|'editor'|'assistant'>('home');
+ const [assistantPage,setAssistantPage]=useState<AssistantPageDescriptor|null>(null);
+ const assistantContext=useRef<string|null>(null),programmaticEdit=useRef(false),activityTracker=useRef(new ActivityTracker());
  const [bookId,setBookId]=useState<string|null>(null),[docId,setDocId]=useState<string|null>(null);
  const [mode,setMode]=useState<EditorMode>('edit'),[collapsed,setCollapsed]=useState(false),[mobileOpen,setMobileOpen]=useState(false),[outlineOpen,setOutlineOpen]=useState(false);
  const [width,setWidth]=useState(initialWidth),[mobile,setMobile]=useState(matchMedia('(max-width:700px)').matches),[compact,setCompact]=useState(matchMedia('(max-width:1100px)').matches);
  const [headings,setHeadings]=useState<EditorHeading[]>([]),[dialog,setDialog]=useState<Dialog>(null),[context,setContext]=useState<Context|null>(null);
- const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[notice,setNotice]=useState(''),[,setPluginVersion]=useState(0),[showPanels,setShowPanels]=useState(false);
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[notice,setNotice]=useState(''),[pluginVersion,setPluginVersion]=useState(0),[showPanels,setShowPanels]=useState(false);
  const [cover,setCover]=useState('preset:0'),[transferTab,setTransferTab]=useState<'import'|'export'>('import'),[exportScope,setExportScope]=useState('all'),[exportFormat,setExportFormat]=useState('zip');
  const [locationId,setLocationId]=useState<string|null>(null),[newLocation,setNewLocation]=useState<string|null>(null);
  const allowLocations=!/Android|iPhone|iPad/i.test(navigator.userAgent)&&(!mobile||native);
  const [importFile,setImportFile]=useState<{name:string,bytes:Uint8Array}|null>(null),[quickQuery,setQuickQuery]=useState('');
  const editor=useRef<EditorHandle|null>(null),host=useRef<PluginHost|null>(null),activeRef=useRef<string|null>(null),contextRef=useRef<HTMLDivElement>(null),outlineToggleRef=useRef<HTMLButtonElement>(null);
  const changingPlugins=useRef(false);
- activeRef.current=view==='editor'?docId:null;
+ activeRef.current=view==='editor'?docId:view==='assistant'?assistantContext.current:null;
  const activeBook=workspace?.notebooks.find(b=>b.id===bookId),activeDocument=activeBook?.documents.find(d=>d.id===docId);
  const report=useCallback((e:unknown)=>setMessage(e instanceof Error?e.message:String(e)),[]);
- const writeDocument=useCallback((id:string,markdown:string)=>update(old=>({...old,notebooks:old.notebooks.map(b=>({...b,documents:b.documents.map(d=>d.id===id?{...d,markdown,title:markdown.match(/^#\s+([^\r\n]+)/)?.[1]?.trim()||d.title,updatedAt:new Date().toISOString()}:d)}))})),[update]);
+ const writeDocument=useCallback((id:string,markdown:string,edit?:{beforePlain:string;afterPlain:string;history?:'undo'|'redo'})=>update(old=>{
+  const previous=old.notebooks.flatMap(b=>b.documents).find(d=>d.id===id);
+  if(!previous||previous.markdown===markdown)return old;
+  let extensions=old.extensions;
+  if(edit&&!programmaticEdit.current){
+   try{
+   const deltas=activityTracker.current.record(id,edit.beforePlain,edit.afterPlain,edit.history);
+   for(const widget of host.current?.getActivityWidgets()||[])for(const delta of deltas){
+    const key=`activity.${delta.day}.${id}.${extensionDeviceId()}`;
+    const stored=getPluginData(extensions,widget.pluginId,key) as {added?:number;removed?:number}|undefined;
+    extensions=putPluginData(extensions,widget.pluginId,key,{day:delta.day,documentId:id,title:previous.title,added:Math.max(0,Number(stored?.added||0)+delta.added),removed:Math.max(0,Number(stored?.removed||0)+delta.removed)});
+   }
+   }catch(error){report(error);}
+  }else activityTracker.current.reset(id);
+  return {...old,extensions,notebooks:old.notebooks.map(b=>({...b,documents:b.documents.map(d=>d.id===id?{...d,markdown,title:markdown.match(/^#\s+([^\r\n]+)/)?.[1]?.trim()||d.title,updatedAt:new Date().toISOString()}:d)}))};
+ }),[update,report]);
  const collect=useCallback(()=>{const id=activeRef.current;if(!id||!editor.current)return;const value=editor.current.getValue();const doc=current.current?.notebooks.flatMap(b=>b.documents).find(d=>d.id===id);if(doc&&value!==doc.markdown)writeDocument(id,value);},[current,writeDocument]);
  const persist=useCallback(async()=>{collect();await flush();},[collect,flush]);
- const applySynced=useCallback((notebooks:Notebook[])=>{
+ const applySynced=useCallback((notebooks:Notebook[],extensions?:ExtensionState)=>{
   const id=activeRef.current;
-  update(old=>({...old,notebooks}));
+  update(old=>{for(const book of notebooks)for(const doc of book.documents){const previous=old.notebooks.flatMap(b=>b.documents).find(d=>d.id===doc.id);if(previous?.markdown!==doc.markdown)activityTracker.current.reset(doc.id);}return {...old,notebooks,extensions};});
   if(id){const book=notebooks.find(b=>b.documents.some(d=>d.id===id));if(book)setBookId(book.id);else{setView('home');setBookId(null);setDocId(null);activeRef.current=null;editor.current=null;setHeadings([]);}}
  },[update]);
  const github=useGithubSync({current,ready:!!workspace,collect,flush,apply:applySynced});
@@ -54,7 +78,43 @@ export default function App(){
  useEffect(()=>{const phone=matchMedia('(max-width:700px)'),small=matchMedia('(max-width:1100px)');const change=()=>{setMobile(phone.matches);setCompact(small.matches);};phone.addEventListener('change',change);small.addEventListener('change',change);return()=>{phone.removeEventListener('change',change);small.removeEventListener('change',change);};},[]);
  useEffect(()=>{try{localStorage.setItem('typepro.sidebar.width',String(width));}catch{}},[width]);
  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2600);return()=>clearTimeout(timer);},[notice]);
- useEffect(()=>{const runtime=new PluginHost({getWorkspace:()=>{collect();return current.current||{version:1,notebooks:[],plugins:[]};},getActiveDocumentId:()=>activeRef.current,replaceDocument:async(id,markdown)=>{writeDocument(id,markdown);await flush();},createDocument:async(notebookId,title,markdown)=>{if(!current.current?.notebooks.some(b=>b.id===notebookId))throw new Error('笔记不存在');const doc:NoteDocument={id:uuid(),title,markdown,updatedAt:new Date().toISOString()};update(old=>({...old,notebooks:old.notebooks.map(b=>b.id===notebookId?{...b,documents:[...b.documents,doc]}:b)}));await flush();return doc;},insertText:text=>{if(!activeRef.current||!editor.current)throw new Error('请先打开文档');editor.current.insertText(text);},onStateChange:()=>setPluginVersion(v=>v+1),onError:report,onPluginStopped:id=>update(old=>({...old,plugins:old.plugins.map(p=>p.manifest.id===id?{...p,enabled:false}:p)}))});host.current=runtime;return()=>{runtime.dispose();host.current=null;};},[current,update,flush,writeDocument,report,collect]);
+ const listPluginData=useCallback((pluginId:string,prefix:string)=>
+  (current.current?.extensions?.entries||[]).filter(entry=>entry.pluginId===pluginId&&!entry.deleted&&entry.key.startsWith(prefix)).map(entry=>({key:entry.key,value:getPluginData(current.current?.extensions,pluginId,entry.key)})),[current]);
+ const setPluginData=useCallback(async(pluginId:string,key:string,value:unknown,remove=false)=>{
+  if(!host.current?.hasPermission(pluginId,'storage'))throw new Error('插件已停用或没有存储权限');
+  update(old=>({...old,extensions:remove?removePluginData(old.extensions,pluginId,key):putPluginData(old.extensions,pluginId,key,value as JsonValue)}));
+  await flush();
+ },[update,flush]);
+ const openAssistant=useCallback((page:AssistantPageDescriptor)=>{
+  collect();assistantContext.current=activeRef.current;editor.current=null;setAssistantPage(page);setView('assistant');setDialog(null);setContext(null);setMobileOpen(false);
+ },[collect]);
+ useEffect(()=>{
+  const runtime=new PluginHost({
+   getWorkspace:()=>{collect();return current.current||{version:1,notebooks:[],plugins:[]};},
+   getActiveDocumentId:()=>activeRef.current,
+   replaceDocument:async(id,markdown)=>{writeDocument(id,markdown);await flush();},
+   createDocument:async(notebookId,title,markdown)=>{if(!current.current?.notebooks.some(b=>b.id===notebookId))throw new Error('笔记不存在');const doc:NoteDocument={id:uuid(),title,markdown,updatedAt:new Date().toISOString()};update(old=>({...old,notebooks:old.notebooks.map(b=>b.id===notebookId?{...b,documents:[...b.documents,doc]}:b)}));await flush();return doc;},
+   insertText:text=>{if(!activeRef.current||!editor.current)throw new Error('请先打开文档');programmaticEdit.current=true;try{editor.current.insertText(text);}finally{programmaticEdit.current=false;}},
+   getPluginData:(pluginId,key)=>getPluginData(current.current?.extensions,pluginId,key),listPluginData,setPluginData,onOpenAssistant:openAssistant,
+   onStateChange:()=>setPluginVersion(v=>v+1),onError:report,
+   onPluginStopped:id=>update(old=>({...old,plugins:old.plugins.map(p=>p.manifest.id===id?{...p,enabled:false}:p)}))
+  });
+  host.current=runtime;return()=>{runtime.dispose();host.current=null;};
+ },[current,update,flush,writeDocument,report,collect,listPluginData,setPluginData,openAssistant]);
+ useEffect(()=>{
+  if(!workspace)return;
+  const missing=workspace.plugins.filter(plugin=>!workspace.extensions?.installs.some(entry=>entry.id===plugin.manifest.id));
+  if(missing.length)update(old=>({...old,extensions:missing.reduce((state,plugin)=>recordInstallation(state,plugin),old.extensions)}));
+ },[!!workspace,update]);
+ const installationSignature=JSON.stringify(workspace?.extensions?.installs||[]);
+ useEffect(()=>{
+  if(!workspace||changingPlugins.current)return;
+  let cancelled=false;
+  void restoreSyncedPlugins({getWorkspace:()=>current.current,isCancelled:()=>cancelled,apply:plugins=>changePlugins(plugins,false),onError:report}).catch(report);
+  return()=>{cancelled=true;};
+ },[installationSignature,!!workspace,github.state.lastSyncedAt]);
+ useEffect(()=>{if(view==='assistant'&&assistantPage&&!host.current?.getAssistantPages().some(page=>page.id===assistantPage.id)){setAssistantPage(null);setView('home');}},[pluginVersion,view,assistantPage]);
+
  useEffect(()=>{if(!changingPlugins.current)host.current?.setPlugins(workspace?.plugins||[]);},[workspace?.plugins]);
  useEffect(()=>{const timer=setTimeout(()=>host.current?.notifyDocumentChange(),300);return()=>clearTimeout(timer);},[activeDocument?.markdown,docId]);
  useEffect(()=>{const hidden=()=>{if(document.visibilityState==='hidden')void persist().catch(report);};const leave=()=>void persist().catch(report);document.addEventListener('visibilitychange',hidden);window.addEventListener('pagehide',leave);return()=>{document.removeEventListener('visibilitychange',hidden);window.removeEventListener('pagehide',leave);};},[persist,report]);
@@ -67,21 +127,39 @@ export default function App(){
  function closeOutline(){setOutlineOpen(false);requestAnimationFrame(()=>outlineToggleRef.current?.focus());}
  function select(b:string,d?:string){collect();const target=current.current?.notebooks.find(n=>n.id===b);const next=d||target?.documents[0]?.id||null;if(next)recordRecentDocument(next);setBookId(b);setDocId(next);setMode('edit');setView('editor');setMobileOpen(false);setShowPanels(false);setContext(null);if(next!==docId){editor.current=null;setHeadings([]);}}
  function openLocation(id:string){collect();setContext(null);setLocationId(id);}
- async function changePlugins(plugins:Workspace['plugins']){
+ async function changePlugins(plugins:Workspace['plugins'],syncInstallations=true){
   if(changingPlugins.current)throw new Error('插件正在保存，请稍候');
   changingPlugins.current=true;setBusy(true);
   let previous:Workspace['plugins']|undefined;
+  let previousExtensions:ExtensionState|undefined;
+  let stagedExtensions:ExtensionState|undefined;
   try{
    collect();
    previous=current.current?.plugins;
+   previousExtensions=current.current?.extensions;
    if(!previous)throw new Error('笔记尚未加载');
    host.current?.setPlugins(previous.filter(plugin=>plugins.includes(plugin)));
-   update(old=>({...old,plugins}));
+   update(old=>{
+    let extensions=old.extensions;
+    if(syncInstallations){
+     for(const plugin of previous!)if(!extensions?.installs.some(record=>record.id===plugin.manifest.id))extensions=recordInstallation(extensions,plugin);
+     for(const plugin of plugins)extensions=recordInstallation(extensions,plugin);
+     for(const plugin of previous!)if(!plugins.some(next=>next.manifest.id===plugin.manifest.id))extensions=recordInstallation(extensions,null,plugin.manifest.id);
+    }
+    stagedExtensions=extensions;return {...old,plugins,extensions};
+   });
    await flush();
   }catch(e){
    if(previous){
     const restored=previous.map(plugin=>plugins.includes(plugin)?current.current?.plugins.find(value=>value.manifest.id===plugin.manifest.id)||plugin:plugin);
-    update(old=>({...old,plugins:restored}));await flush().catch(report);
+    update(old=>{
+     const installs=(old.extensions?.installs||[]).flatMap(record=>{
+      const staged=stagedExtensions?.installs.find(value=>value.id===record.id);
+      if(JSON.stringify(staged)!==JSON.stringify(record))return [record];
+      const original=previousExtensions?.installs.find(value=>value.id===record.id);return original?[original]:[];
+     });
+     return {...old,plugins:restored,...(old.extensions?{extensions:{...old.extensions,installs}}:{})};
+    });await flush().catch(report);
    }
    throw e;
   }finally{
@@ -102,6 +180,30 @@ export default function App(){
  function followLink(e:React.MouseEvent){const el=e.target as HTMLElement;const a=el.closest<HTMLAnchorElement>('a[href]');if(a){const url=a.getAttribute('href')||'';if(/^https?:\/\//i.test(url)){e.preventDefault();void openLink(url).catch(report);}else if(!url.startsWith('#'))e.preventDefault();}else if(e.metaKey||e.ctrlKey){const url=el.closest('[data-type="a"]')?.querySelector('.vditor-ir__marker--link')?.textContent;if(url){e.preventDefault();void openLink(url).catch(report);}}}
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.isComposing||e.defaultPrevented||(e.target as HTMLElement).closest('.editor-slash-menu,.editor-link-dialog,.flow-overlay,.tool-overlay'))return;if(e.key==='Escape'){setContext(null);setMobileOpen(false);if(outlineOpen)closeOutline();return;}if(dialog||locationId||busy)return;const action=APP_SHORTCUTS.find(s=>matchesEditorShortcut(e,s.binding));if(!action)return;if(['save','toggle-mode','sidebar','outline','documents'].includes(action.id)&&view!=='editor')return;e.preventDefault();e.stopPropagation();if(action.id==='new')create(view==='home'?'book':'document');else if(action.id==='save')void persist().catch(report);else if(action.id==='toggle-mode'){collect();setMode(m=>m==='read'?'edit':'read');}else if(action.id==='sidebar')compact?setMobileOpen(v=>!v):setCollapsed(v=>!v);else if(action.id==='outline')outlineOpen?closeOutline():setOutlineOpen(true);else if(action.id==='documents'){setCollapsed(false);setMobileOpen(compact);}else openDialog({type:action.id as 'theme'|'quick-open'|'shortcuts'});};window.addEventListener('keydown',key,true);return()=>window.removeEventListener('keydown',key,true);});
  const commands=host.current?.getCommands()||[],panels=host.current?.getPanels()||[];
+ const activityWidgets=host.current?.getActivityWidgets()||[],assistantPages=host.current?.getAssistantPages()||[];
+ function requireAssistant(permission:string){if(!assistantPage||!host.current?.hasPermission(assistantPage.pluginId,permission))throw new Error('插件已停用或没有所需权限');}
+ const assistantAdapter:AssistantAdapter={
+  listNotes:()=>{requireAssistant('notes.read');collect();return (current.current?.notebooks||[]).map(({id,name,documents})=>({id,name,documents:documents.map(({id,title,updatedAt})=>({id,title,updatedAt}))}));},
+  readNote:id=>{collect();if(!assistantPage||!host.current?.hasPermission(assistantPage.pluginId,'notes.read'))throw new Error('插件没有读取权限');const doc=current.current?.notebooks.flatMap(book=>book.documents).find(doc=>doc.id===id);return doc?{...doc}:null;},
+  activeNote:()=>assistantContext.current?assistantAdapter.readNote(assistantContext.current):null,
+  createNote:async(bookId,title,markdown)=>{
+   if(!assistantPage||!host.current?.hasPermission(assistantPage.pluginId,'notes.write'))throw new Error('插件没有写入权限');
+   if(!current.current?.notebooks.some(book=>book.id===bookId))throw new Error('目标笔记不存在');
+   const doc:NoteDocument={id:uuid(),title,markdown,updatedAt:new Date().toISOString()};
+   update(old=>({...old,notebooks:old.notebooks.map(book=>book.id===bookId?{...book,documents:[...book.documents,doc]}:book)}));await flush();return doc;
+  },
+  updateNote:async(id,markdown,expectedMarkdown)=>{
+   collect();if(!assistantPage||!host.current?.hasPermission(assistantPage.pluginId,'notes.write'))throw new Error('插件没有写入权限');
+   const doc=current.current?.notebooks.flatMap(book=>book.documents).find(doc=>doc.id===id);
+   if(!doc||doc.markdown!==expectedMarkdown)throw new Error('文档已发生变化，请重新读取并确认修改');
+   writeDocument(id,markdown);await flush();
+  },
+  getData:key=>{requireAssistant('storage');return getPluginData(current.current?.extensions,assistantPage!.pluginId,key);},
+  listData:prefix=>{requireAssistant('storage');return listPluginData(assistantPage!.pluginId,prefix);},
+  setData:(key,value)=>assistantPage?setPluginData(assistantPage.pluginId,key,value):Promise.reject(new Error('AI 页面已关闭')),
+ };
+ function returnFromAssistant(){const id=assistantContext.current;const book=current.current?.notebooks.find(book=>book.documents.some(doc=>doc.id===id));if(book&&id)select(book.id,id);else goHome();}
+
  const targetBook=dialog&&'bookId'in dialog?workspace?.notebooks.find(b=>b.id===dialog.bookId):undefined;
  const targetDoc=dialog&&'docId'in dialog?targetBook?.documents.find(d=>d.id===dialog.docId):undefined;
  const quickResults=workspace?.notebooks.flatMap(b=>b.documents.map(d=>({b,d}))).filter(({b,d})=>(b.name+' '+d.title).toLocaleLowerCase().includes(quickQuery.trim().toLocaleLowerCase()))||[];
@@ -109,12 +211,12 @@ export default function App(){
  const menuButton=(label:string,fn:()=>void,Icon=FileText,hint='',danger=false)=><button key={label} className={danger?'danger-text':''} onClick={()=>{setContext(null);fn();}}><Icon size={16}/><span>{label}</span>{hint&&<kbd>{hint}</kbd>}</button>;
  if(!workspace)return <main className="startup"><img src="/typepro-logo.png" alt="TypePro"/>{error?<><p role="alert">{error}</p><button className="btn outline" onClick={()=>location.reload()}>重新加载</button></>:<p>正在打开…</p>}</main>;
  return <div className={`app ${native&&!/Android/i.test(navigator.userAgent)?'native-mac':''} ${view==='home'?'home-view':''}`} style={{'--sidebar-w':width+'px'} as CSSProperties}>
- {view==='home'?<Home notebooks={workspace.notebooks} onOpen={select} onCreate={()=>create('book')} onMenu={(b,a)=>showContext('book',a,b)} onTheme={()=>openDialog({type:'theme'})} onTransfer={()=>transfer()} onSync={()=>openDialog({type:'github'})} syncLabel={syncLabel} onMore={a=>showContext('home',a)}/>:<div className={`workspace ${collapsed?'collapsed':''} ${mobileOpen?'mobile-open':''}`}>
+ {view==='assistant'&&assistantPage&&assistantPages.some(page=>page.id===assistantPage.id)?<Suspense fallback={<main className="startup">正在打开 AI 助手…</main>}><AssistantPage key={assistantPage.id} pluginId={assistantPage.pluginId} title={assistantPage.title} defaultSystemPrompt={assistantPage.systemPrompt} adapter={assistantAdapter} onBack={returnFromAssistant} onOpenDocument={id=>{const book=current.current?.notebooks.find(book=>book.documents.some(doc=>doc.id===id));if(book)select(book.id,id);}}/></Suspense>:view!=='editor'?<Home actions={assistantPages[0]?<button className="tp-icon-button" title={assistantPages[0].title} aria-label={assistantPages[0].title} onClick={()=>openAssistant(assistantPages[0])}><Sparkles/></button>:undefined} extensions={activityWidgets.map(widget=><ActivityHeatmap key={widget.id} title={widget.title} entries={listPluginData(widget.pluginId,'activity.')}/>)} notebooks={workspace.notebooks} onOpen={select} onCreate={()=>create('book')} onMenu={(b,a)=>showContext('book',a,b)} onTheme={()=>openDialog({type:'theme'})} onTransfer={()=>transfer()} onSync={()=>openDialog({type:'github'})} syncLabel={syncLabel} onMore={a=>showContext('home',a)}/>:<div className={`workspace ${collapsed?'collapsed':''} ${mobileOpen?'mobile-open':''}`}>
  <button className="mobile-scrim" aria-label="关闭目录" onClick={()=>setMobileOpen(false)}/><Sidebar notebooks={workspace.notebooks} bookId={bookId} documentId={docId} hidden={compact?!mobileOpen:collapsed} width={width} onHome={goHome} onCollapse={()=>compact?setMobileOpen(false):setCollapsed(true)} onSelect={select} onCreate={()=>create('document')} onSwitch={a=>showContext('books',a)} onMenu={(b,d,a)=>showContext('doc',a,b,d)} onTransfer={()=>transfer()} onPlugins={()=>openDialog({type:'plugins'})} onSync={()=>openDialog({type:'github'})} syncLabel={syncLabel} onResize={setWidth}/>
- <main className="editor-main" onClick={followLink}><header className="editor-header" data-tauri-drag-region><button className="icon-button open-sidebar" aria-label="展开目录" title="展开目录 · ⌘ ⇧ L" onClick={()=>compact?setMobileOpen(true):setCollapsed(false)}><PanelLeft size={19}/></button><div className="breadcrumb" data-tauri-drag-region><span className="book-crumb">{activeBook?.name}</span><span className="sep">/</span><b>{activeDocument?.title||activeBook?.name}</b></div>{activeDocument&&<button className="icon-button mode-toggle" aria-label={mode==='edit'?'切换到阅读 · ⌘ /':'切换到编辑 · ⌘ /'} title={mode==='edit'?'切换到阅读 · ⌘ /':'切换到编辑 · ⌘ /'} onClick={()=>{collect();setMode(mode==='edit'?'read':'edit');}}>{mode==='edit'?<Eye size={19}/>:<Pencil size={19}/>}</button>}<div className="header-actions"><button className="icon-button theme-top" aria-label="外观" onClick={()=>openDialog({type:'theme'})}><Palette size={19}/></button>{panels.length>0&&<button className="icon-button" aria-label="插件面板" onClick={()=>setShowPanels(v=>!v)}><Puzzle size={18}/></button>}<button className="icon-button" aria-label="文档操作" onClick={e=>showContext('doc',e.currentTarget,bookId||undefined,docId||undefined)}><MoreHorizontal size={20}/></button></div></header>
- <div className="editor-and-panels">{activeDocument?<MarkdownEditor key={activeDocument.id} documentId={activeDocument.id} markdown={activeDocument.markdown} mode={mode} theme={resolvedTheme} documentTools={<div className={`document-tools ${outlineOpen?'outline-open':''}`}><button ref={outlineToggleRef} className="icon-button outline-toggle" aria-label="文档大纲" title="文档大纲 · ⌘ ⌃ 1" aria-controls="document-outline" aria-expanded={outlineOpen} onClick={()=>setOutlineOpen(v=>!v)}><ListTree size={18}/></button></div>} documentOutline={outlineOpen?<Outline key={activeDocument.id} headings={headings} onJump={id=>editor.current?.scrollToHeading(id)} onClose={closeOutline}/>:null} onChange={md=>writeDocument(activeDocument.id,md)} onReady={api=>{editor.current=api;setHeadings(api.getHeadings());}} onHeadingsChange={setHeadings} onError={report} saveAsset={saveAsset} resolveAsset={resolveAsset}/>:<section className="empty-state"><div className="empty-mark"><FileText size={30}/></div><h2>还没有文档</h2><p>写下这一页的第一句话。</p><button className="btn primary" onClick={()=>create('document')}><Plus size={17}/>新建文档</button></section>}{showPanels&&panels.length>0&&<aside className="plugin-panels"><header>插件面板<button className="icon-button" onClick={()=>setShowPanels(false)} aria-label="关闭插件面板"><X size={15}/></button></header>{panels.map(p=><section key={p.id}><h3>{p.title}</h3><p>{p.text}</p></section>)}</aside>}</div>
+ <main className="editor-main" onClick={followLink}><header className="editor-header" data-tauri-drag-region><button className="icon-button open-sidebar" aria-label="展开目录" title="展开目录 · ⌘ ⇧ L" onClick={()=>compact?setMobileOpen(true):setCollapsed(false)}><PanelLeft size={19}/></button><div className="breadcrumb" data-tauri-drag-region><span className="book-crumb">{activeBook?.name}</span><span className="sep">/</span><b>{activeDocument?.title||activeBook?.name}</b></div>{activeDocument&&<button className="icon-button mode-toggle" aria-label={mode==='edit'?'切换到阅读 · ⌘ /':'切换到编辑 · ⌘ /'} title={mode==='edit'?'切换到阅读 · ⌘ /':'切换到编辑 · ⌘ /'} onClick={()=>{collect();setMode(mode==='edit'?'read':'edit');}}>{mode==='edit'?<Eye size={19}/>:<Pencil size={19}/>}</button>}<div className="header-actions">{assistantPages[0]&&<button className="icon-button" aria-label={assistantPages[0].title} title={assistantPages[0].title} onClick={()=>openAssistant(assistantPages[0])}><Sparkles size={18}/></button>}<button className="icon-button theme-top" aria-label="外观" onClick={()=>openDialog({type:'theme'})}><Palette size={19}/></button>{panels.length>0&&<button className="icon-button" aria-label="插件面板" onClick={()=>setShowPanels(v=>!v)}><Puzzle size={18}/></button>}<button className="icon-button" aria-label="文档操作" onClick={e=>showContext('doc',e.currentTarget,bookId||undefined,docId||undefined)}><MoreHorizontal size={20}/></button></div></header>
+ <div className="editor-and-panels">{activeDocument?<MarkdownEditor key={activeDocument.id} documentId={activeDocument.id} markdown={activeDocument.markdown} mode={mode} theme={resolvedTheme} documentTools={<div className={`document-tools ${outlineOpen?'outline-open':''}`}><button ref={outlineToggleRef} className="icon-button outline-toggle" aria-label="文档大纲" title="文档大纲 · ⌘ ⌃ 1" aria-controls="document-outline" aria-expanded={outlineOpen} onClick={()=>setOutlineOpen(v=>!v)}><ListTree size={18}/></button></div>} documentOutline={outlineOpen?<Outline key={activeDocument.id} headings={headings} onJump={id=>editor.current?.scrollToHeading(id)} onClose={closeOutline}/>:null} trackEdits={activityWidgets.length>0} onChange={(md,edit)=>writeDocument(activeDocument.id,md,edit)} onReady={api=>{editor.current=api;setHeadings(api.getHeadings());}} onHeadingsChange={setHeadings} onError={report} saveAsset={saveAsset} resolveAsset={resolveAsset}/>:<section className="empty-state"><div className="empty-mark"><FileText size={30}/></div><h2>还没有文档</h2><p>写下这一页的第一句话。</p><button className="btn primary" onClick={()=>create('document')}><Plus size={17}/>新建文档</button></section>}{showPanels&&panels.length>0&&<aside className="plugin-panels"><header>插件面板<button className="icon-button" onClick={()=>setShowPanels(false)} aria-label="关闭插件面板"><X size={15}/></button></header>{panels.map(p=><section key={p.id}><h3>{p.title}</h3><p>{p.text}</p></section>)}</aside>}</div>
  <footer className={`editor-status ${status==='error'?'error':''}`} role="status"><CheckCircle2 size={13}/><span>{status==='saved'?'已保存':status==='saving'?'保存中…':'保存失败'}</span>{status==='error'&&<button className="retry" onClick={()=>void persist().catch(report)}>重试</button>}<button className="retry" onClick={()=>openDialog({type:'github'})} title="GitHub 同步">{syncLabel}</button><span className="word-count">{(activeDocument?.markdown||'').replace(/\s/g,'').length} 字</span></footer></main></div>}
- {context&&<div className="context-menu" ref={contextRef} role="menu" style={{left:context.x,top:context.y,maxHeight:innerHeight-context.y-10}}>{context.kind==='home'?<>{menuButton('快速打开',()=>openDialog({type:'quick-open'}),Search,shortcutHint('quick-open'))}{menuButton('外观',()=>openDialog({type:'theme'}),Palette,shortcutHint('theme'))}{menuButton('插件',()=>openDialog({type:'plugins'}),Puzzle)}{menuButton('GitHub 同步',()=>openDialog({type:'github'}),GitBranch)}{menuButton('导入 / 导出',()=>transfer(),ArrowDownUp)}{menuButton('键盘快捷键',()=>openDialog({type:'shortcuts'}),Keyboard,shortcutHint('shortcuts'))}{menuButton('关于 TypePro',()=>openDialog({type:'about'}),Info)}</>:context.kind==='books'?<>{workspace.notebooks.map(b=>menuButton(b.name,()=>select(b.id),BookOpen))}{allowLocations&&bookId&&menuButton('当前笔记存储目录',()=>openLocation(bookId),FolderOpen)}<hr/>{menuButton('全部笔记',goHome,HomeIcon)}</>:<>{context.kind==='book'?menuButton('打开笔记',()=>select(context.bookId!),BookOpen):menuButton('新建文档',()=>openDialog({type:'name',kind:'document',bookId:context.bookId,value:''}),Plus,shortcutHint('new'))}{menuButton('重命名',()=>{const b=workspace.notebooks.find(b=>b.id===context.bookId);openDialog({type:'name',kind:context.docId?'rename-document':'rename-book',bookId:context.bookId,docId:context.docId,value:context.docId?b?.documents.find(d=>d.id===context.docId)?.title||'':b?.name||''});})}{!context.docId&&allowLocations&&context.bookId&&menuButton('存储目录',()=>openLocation(context.bookId!),FolderOpen)}{!context.docId&&menuButton('设置封面',()=>openDialog({type:'cover',bookId:context.bookId!}),BookOpen)}{context.docId&&workspace.notebooks.length>1&&menuButton('移动到…',()=>openDialog({type:'move',bookId:context.bookId!,docId:context.docId!}),FolderOpen)}{menuButton(context.docId?'导出文档':'导出笔记',()=>transfer('export',context.bookId,context.docId),Upload)}{context.kind==='doc'&&<><hr/>{menuButton('快速打开',()=>openDialog({type:'quick-open'}),Search,shortcutHint('quick-open'))}{menuButton('外观',()=>openDialog({type:'theme'}),Palette,shortcutHint('theme'))}{menuButton('键盘快捷键',()=>openDialog({type:'shortcuts'}),Keyboard,shortcutHint('shortcuts'))}{menuButton('关于 TypePro',()=>openDialog({type:'about'}),Info)}{context.docId===docId&&commands.map(c=>menuButton(c.label,()=>void host.current?.runCommand(c.id).catch(report),Puzzle))}</>}<hr/>{menuButton(context.docId?'删除文档':'删除笔记',()=>openDialog({type:'delete',bookId:context.bookId!,docId:context.docId}),Trash2,'',true)}</>}</div>}
+ {context&&<div className="context-menu" ref={contextRef} role="menu" style={{left:context.x,top:context.y,maxHeight:innerHeight-context.y-10}}>{context.kind==='home'?<>{menuButton('快速打开',()=>openDialog({type:'quick-open'}),Search,shortcutHint('quick-open'))}{menuButton('外观',()=>openDialog({type:'theme'}),Palette,shortcutHint('theme'))}{menuButton('插件',()=>openDialog({type:'plugins'}),Puzzle)}{menuButton('GitHub 同步',()=>openDialog({type:'github'}),GitBranch)}{menuButton('导入 / 导出',()=>transfer(),ArrowDownUp)}{menuButton('键盘快捷键',()=>openDialog({type:'shortcuts'}),Keyboard,shortcutHint('shortcuts'))}{commands.map(c=>menuButton(c.label,()=>void host.current?.runCommand(c.id).catch(report),Puzzle))}{menuButton('关于 TypePro',()=>openDialog({type:'about'}),Info)}</>:context.kind==='books'?<>{workspace.notebooks.map(b=>menuButton(b.name,()=>select(b.id),BookOpen))}{allowLocations&&bookId&&menuButton('当前笔记存储目录',()=>openLocation(bookId),FolderOpen)}<hr/>{menuButton('全部笔记',goHome,HomeIcon)}</>:<>{context.kind==='book'?menuButton('打开笔记',()=>select(context.bookId!),BookOpen):menuButton('新建文档',()=>openDialog({type:'name',kind:'document',bookId:context.bookId,value:''}),Plus,shortcutHint('new'))}{menuButton('重命名',()=>{const b=workspace.notebooks.find(b=>b.id===context.bookId);openDialog({type:'name',kind:context.docId?'rename-document':'rename-book',bookId:context.bookId,docId:context.docId,value:context.docId?b?.documents.find(d=>d.id===context.docId)?.title||'':b?.name||''});})}{!context.docId&&allowLocations&&context.bookId&&menuButton('存储目录',()=>openLocation(context.bookId!),FolderOpen)}{!context.docId&&menuButton('设置封面',()=>openDialog({type:'cover',bookId:context.bookId!}),BookOpen)}{context.docId&&workspace.notebooks.length>1&&menuButton('移动到…',()=>openDialog({type:'move',bookId:context.bookId!,docId:context.docId!}),FolderOpen)}{menuButton(context.docId?'导出文档':'导出笔记',()=>transfer('export',context.bookId,context.docId),Upload)}{context.kind==='doc'&&<><hr/>{menuButton('快速打开',()=>openDialog({type:'quick-open'}),Search,shortcutHint('quick-open'))}{menuButton('外观',()=>openDialog({type:'theme'}),Palette,shortcutHint('theme'))}{menuButton('键盘快捷键',()=>openDialog({type:'shortcuts'}),Keyboard,shortcutHint('shortcuts'))}{menuButton('关于 TypePro',()=>openDialog({type:'about'}),Info)}{context.docId===docId&&commands.map(c=>menuButton(c.label,()=>void host.current?.runCommand(c.id).catch(report),Puzzle))}</>}<hr/>{menuButton(context.docId?'删除文档':'删除笔记',()=>openDialog({type:'delete',bookId:context.bookId!,docId:context.docId}),Trash2,'',true)}</>}</div>}
  {(message||error)&&<div className="error-toast" role="alert"><span>{message||error}</span>{message&&<button className="icon-button" aria-label="关闭错误提示" onClick={()=>setMessage('')}><X size={16}/></button>}</div>}{notice&&<div className="toast" role="status"><CheckCircle2 size={15}/>{notice}</div>}
  {dialog&&<Modal title={dialog.type==='github'?'GitHub 同步':dialog.type==='theme'?'外观':dialog.type==='plugins'?'插件':dialog.type==='shortcuts'?'键盘快捷键':dialog.type==='quick-open'?'快速打开':dialog.type==='about'?'关于 TypePro':dialog.type==='transfer'?'导入 / 导出':dialog.type==='cover'?'设置封面':dialog.type==='delete'?`删除${dialog.docId?'文档':'笔记'}`:dialog.type==='move'?'移动文档':dialog.type==='name'?(dialog.kind.includes('rename')?'重命名':dialog.kind==='book'?'新建笔记':'新建文档'):''} onClose={close} wide={['theme','plugins','transfer','shortcuts','about','github'].includes(dialog.type)}>
  {dialog.type==='theme'&&<ThemeSettings settings={settings} onChange={updateSettings} onReset={resetSettings} onClose={close}/>}

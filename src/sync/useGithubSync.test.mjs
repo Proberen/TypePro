@@ -23,11 +23,11 @@ const find = (value, valueId = 10) => value.notebooks.flatMap(book => book.docum
 function fixture(local, base = local, remote = local) {
   const current = { current: structuredClone(local) };
   const calls = { reads: 0, published: [], checkpoints: [], flushes: 0, applies: 0 };
-  const options = { current, ready: true, collect() {}, async flush() { calls.flushes++; }, apply(notebooks) { calls.applies++; current.current = { ...current.current, notebooks }; } };
+  const options = { current, ready: true, collect() {}, async flush() { calls.flushes++; }, apply(notebooks, extensions) { calls.applies++; current.current = { ...current.current, notebooks, ...(extensions === undefined ? {} : { extensions }) }; } };
   let checkpointSnapshot = remote ? snapshot(remote) : null;
   const api = {
     async readRemote() { calls.reads++; return { head: "a".repeat(40), base: base ? snapshot(base) : null, remote: remote ? snapshot(remote) : null }; },
-    async publish(expectedHead, value) { assert.equal(expectedHead, "a".repeat(40)); assert.deepEqual(Object.keys(value), ["version", "notebooks"]); const result = { head: "b".repeat(40), snapshot: snapshot(value) }; calls.published.push(result); return result; },
+    async publish(expectedHead, value) { assert.equal(expectedHead, "a".repeat(40)); assert.deepEqual(Object.keys(value), value.extensions ? ["version", "notebooks", "extensions"] : ["version", "notebooks"]); const result = { head: "b".repeat(40), snapshot: snapshot(value) }; calls.published.push(result); return result; },
     async checkpoint(head, value) { calls.checkpoints.push({ head, snapshot: structuredClone(value) }); checkpointSnapshot = value; },
     async status() { return { clientId: "Iv1.test", appSlug: "typepro", deviceName: "Mac", deviceId: id(101), intervalMinutes: 5, connected: true, account: { login: "owner", avatarUrl: "" }, repository: { owner: "owner", name: "typepro-notes", url: "https://github.com/owner/typepro-notes", defaultBranch: "main" }, lastSyncedAt: successfulSyncTime, lastSource: checkpointSnapshot?.source || null }; },
   };
@@ -131,4 +131,23 @@ test("cancellation after a download prevents local apply and baseline writes", a
   assert.deepEqual(toSyncWorkspace(f.options.current.current), toSyncWorkspace(local));
   assert.equal(f.calls.applies, 0);
   assert.equal(f.calls.checkpoints.length, 0);
+});
+
+test("plugin data written during publication survives and plugin execution grants remain local", async () => {
+  const extension = (key, value, minute = 0) => ({ pluginId: "notebook.assistant", key, value, updatedAt: `2026-10-22T00:0${minute}:00.000Z`, deviceId: id(100) });
+  const base = { ...workspace(doc()), extensions: { entries: [extension("settings", { model: "base" })], installs: [] } };
+  const local = structuredClone(base), remote = structuredClone(base);
+  local.extensions.entries.push(extension("session.local", { text: "local conversation" }, 1));
+  remote.extensions.entries.push(extension("session.remote", { text: "remote conversation" }, 2));
+  const f = fixture(local, base, remote);
+  const publish = f.api.publish;
+  f.api.publish = async (...args) => {
+    const result = await publish(...args);
+    f.options.current.current = { ...f.options.current.current, extensions: { ...f.options.current.current.extensions, entries: [...f.options.current.current.extensions.entries, extension("session.during", { text: "typed during upload" }, 3)] } };
+    return result;
+  };
+  await f.run();
+  assert.deepEqual(f.options.current.current.extensions.entries.map(entry => entry.key), ["session.during", "session.local", "session.remote", "settings"]);
+  assert.deepEqual(f.calls.checkpoints[0].snapshot.extensions.entries.map(entry => entry.key), ["session.local", "session.remote", "settings"]);
+  assert.deepEqual(f.options.current.current.plugins, local.plugins);
 });

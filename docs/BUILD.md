@@ -1,6 +1,6 @@
 # 构建记录
 
-当前交付 TypePro 1.4.0（Android versionCode `1004000`）。已按用户本次明确许可构建 Apple Silicon DMG 与 Android APK，并完成以下针对性验证。沿用已有依赖与签名，未重新安装依赖；历史记录保留在文末。
+当前交付为 TypePro 1.5.0（Android versionCode `1005000`），包含每日打卡、AI 助手及插件安装与数据同步。用户已明确允许本次构建和必要检查；DMG／APK 已生成，两个插件已完成公开市场发布。本版实际检查见下方 1.5.0 记录，历史版本记录不代表本版验收。
 
 以下为可复现构建参考；本次使用现有依赖执行前端检查与 Tauri 构建，未执行 npm ci。工具版本表记录现有构建环境。
 
@@ -25,12 +25,12 @@ npm ci
 CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 bash scripts/package-dmg.sh \
   src-tauri/target/release/bundle/macos/TypePro.app \
-  ../../outputs/TypePro-1.4.0-mac-arm64.dmg
+  ../../outputs/TypePro-1.5.0-mac-arm64.dmg
 ```
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-构建目标为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。示例显式指定输出为 `TypePro-1.4.0-mac-arm64.dmg`，已生成并通过检查。
+构建目标为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。示例显式指定输出为 `TypePro-1.5.0-mac-arm64.dmg`，已生成并通过检查。
 
 ## Android
 
@@ -52,13 +52,13 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.4.0 的 Android versionCode 配置为 `1004000`，高于 1.3.2 的 `1003002`；CLI 构建时重新生成 `tauri.properties`。本次已完成构建。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.5.0 的 Android versionCode 配置为 `1005000`，高于 1.4.0 的 `1004000`；CLI 构建时重新生成 `tauri.properties`。本次已完成构建。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
 ```
 
-APK 输出路径为 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`。后续构建应沿用个人 release 签名、ARM64 和 ARMv7、minSdk 26、targetSdk 36，并检查 ARM64 原生库的 16KB 页面对齐；1.4.0 已通过以上检查，并与 1.3.2 比对签名证书一致。
+APK 输出路径为 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`。后续构建应沿用个人 release 签名、ARM64 和 ARMv7、minSdk 26、targetSdk 36，并检查 ARM64 原生库的 16KB 页面对齐；1.5.0 已通过以上检查，并与 1.4.0 比对签名证书一致。
 
 保留随源码交付的 Android 工程与自定义 Kotlin 文件，不要再次执行 `android init`。首次构建时 CLI 会生成 `tauri.settings.gradle`、`tauri.build.gradle.kts`、平台资源和本机路径；这些生成文件与构建缓存不在源码压缩包内。
 
@@ -72,12 +72,26 @@ Manifest 的 `@mipmap/ic_launcher` 在 Android 8 及以上通过 `mipmap-anydpi-
 
 ```sh
 codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
-hdiutil verify TypePro-1.4.0-mac-arm64.dmg
+hdiutil verify TypePro-1.5.0-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```
 
 源码包包含 npm 和 Cargo 锁文件，不包含 `node_modules`、`target`、Gradle 缓存、应用数据或签名密钥。
+
+## 1.5.0 每日打卡、AI 与插件同步交付（2026-10-22）
+
+- 两个 API 2 插件均为 1.0.0，已提交并发布到 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins)。[自动发布 #6](https://github.com/Proberen/typepro-plugins/actions/runs/39746913710) 成功，远端 10 份源码逐字节等于本地；新目录包含三个插件，旧目录继续只包含日期与字数 API 1 插件。
+- 实际原生市场模块读取公开目录，对全部三个插件执行下载与固定版本恢复，验证 Release 跳转、包大小、SHA-256 与恢复字节一致；未执行下载的插件代码或使用私有仓库凭据。
+- 前端构建与 TypeScript 检查通过。针对性前端测试 58 项通过（打卡 7、市场 5、安装恢复 7、插件状态 5、同步合并 18、同步流程 9、AI 数据／Skill／工具 7）；夏令时时区复核同组打卡 7 项通过，不重复计数。Rust 全部 46 项、发布脚本 11 项通过。
+- Ponytail 按 1.4.0 源码基线仅审查本次差异，删除没有消费者的 AI usage 请求、解析和跨桥传输链路；未做无关重构。
+- 页面路径为隔离服务 `http://127.0.0.1:1462/`，使用真实 AssistantPage、Home、ActivityHeatmap 与模拟笔记／模型；没有读取生产数据或发送模型请求。内置 CUA IAB 桌面 1280×720、390px 手机内嵌视口检查浅色／深色、首页热力图、日期明细、手机会话抽屉、模型／系统提示词／Skill 设置、新会话空态。
+- 实际交互确认问答显示笔记来源、写入前显示差异、确认后保存、并发修改阻止旧内容覆盖、停止回复立即恢复输入。页面有有效内容，无框架错误层。服务热更新曾产生一条重复 createRoot 开发日志；新建干净验收标签页后的 warn/error 为空。
+- 真实 PluginHost 加载两份已公开源码，经原版 sandbox.html／sandbox.js／Worker 注册；五条断言全部通过，2 个 iframe、1 个首页打卡组件、1 个 AI 页面和 1 个命令。运行真实命令后 `pages.open` 成功打开 AI 页；此入口稳定加载后的控制台 warn/error 为空，AI 与笔记数据仍为模拟。
+- Mac：arm64、1.5.0、`com.localnotes.notebook`，严格 codesign 与 DMG 镜像校验通过，ad-hoc 签名，未公证。DMG 13458933 字节，SHA-256 `7922665cc250d747d9a67536ae71b495267c0fe3ba2f2405719f913755272fe1`。
+- Android：1.5.0／1005000，ARM64＋ARMv7，minSdk 26、targetSdk 36，签名验证通过且与 1.4.0 一致；ZIP 16 KiB 与 ARM64 ELF LOAD 0x4000 对齐通过。APK 34288857 字节，SHA-256 `4763e7b90936daf20d8fb8dbafea13c52585ac17d755ca9ac5a2f35dc6e7783d`。
+- API Key 存于当前设备安全存储，不随插件状态同步。会话、模型、全局提示词、导入 Skill、打卡、安装版本与卸载记录随私有笔记仓库同步；新设备恢复后仍需确认插件权限。先将 Mac 与 Android 都升级到 1.5.0，再首次同步扩展数据，1.4.x 无法读取新版扩展清单。
+- 未在物理手机上验收、未覆盖或启动生产 Mac 应用、未调用真实 DeepSeek 付费接口，未执行两台设备真实联网同步。本版构建、程序检查、组件模拟验收和公共插件下载验证不能视为这些端到端验收。检查记录在工作区 `work/typepro-150-review/`，截图在交付目录 `TypePro-1.5.0-验收/`。
 
 ## 1.4.0 插件市场交付与验证（2026-10-22）
 

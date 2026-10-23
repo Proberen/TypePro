@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ArrowDownUp, CheckCircle2, ChevronRight, FileText, GitBranch, MoreHorizontal, Notebook, Palette, Plus, Search } from "lucide-react";
 import type { Notebook as NotebookData } from "./lib/types";
 import { readRecentDocuments } from "./lib/recent";
@@ -15,6 +15,8 @@ export interface HomeProps {
   onSync: () => void;
   syncLabel: string;
   onMore: (anchor: HTMLElement) => void;
+  extensions?: ReactNode;
+  actions?: ReactNode;
 }
 
 function dateLabel(value?: string, short = false) {
@@ -29,7 +31,7 @@ function dateLabel(value?: string, short = false) {
   return day ? `${day}${short ? "" : ` ${time}`}` : date.toLocaleDateString("zh-CN", { ...(date.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }), month: "long", day: "numeric" });
 }
 
-export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onTransfer, onSync, syncLabel, onMore }: HomeProps) {
+export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onTransfer, onSync, syncLabel, onMore, extensions, actions }: HomeProps) {
   const [search, setSearch] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const query = search.trim().toLocaleLowerCase();
@@ -44,6 +46,7 @@ export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onT
     <header className="tp-home-header">
       <span className="tp-brand"><img src="/typepro-logo.png" alt="" /><span>TypePro</span></span>
       <div className="tp-header-actions">
+        {actions}
         <button className="tp-icon-button" type="button" aria-label="GitHub 同步" title={syncLabel} onClick={onSync}><GitBranch /></button>
         <button className="tp-icon-button" type="button" aria-label="外观" title="外观" onClick={onTheme}><Palette /></button>
         <button className="tp-icon-button tp-desktop-transfer" type="button" aria-label="导入 / 导出" title="导入 / 导出" onClick={onTransfer}><ArrowDownUp /></button>
@@ -53,6 +56,7 @@ export default function Home({ notebooks, onOpen, onCreate, onMenu, onTheme, onT
     <div className="tp-home-scroll">
       <div className="tp-home-content">
         <div className="tp-home-title"><h1>我的笔记</h1><button className="tp-button tp-primary" type="button" onClick={onCreate}><Plus />新建笔记</button></div>
+        {extensions}
         {notebooks.length ? <>
           <label className="tp-search-box"><Search aria-hidden="true" /><input ref={searchInput} placeholder="搜索笔记" aria-label="搜索笔记" value={search} onChange={event => setSearch(event.target.value)} /><kbd>搜索</kbd></label>
           {books.length ? <>

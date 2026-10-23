@@ -47,6 +47,17 @@
         create: (notebookId, title, markdown = '') => rpc('notes.create', { notebookId, title, markdown }),
       }),
       editor: Object.freeze({ insert: text => rpc('editor.insert', { text }) }),
+      storage: Object.freeze({
+        get: key => rpc('storage.get', { key }),
+        list: (prefix = '') => rpc('storage.list', { prefix }),
+        set: (key, value) => rpc('storage.set', { key, value }),
+        remove: key => rpc('storage.remove', { key }),
+      }),
+      home: Object.freeze({ activity: Object.freeze({ register: (id, options) => rpc('home.activity.register', { id, ...options }) }) }),
+      pages: Object.freeze({
+        assistant: Object.freeze({ register: (id, options) => rpc('pages.assistant.register', { id, ...options }) }),
+        open: id => rpc('pages.open', { id }),
+      }),
       commands: Object.freeze({ register: async (id, label, callback) => {
         if (typeof callback !== 'function') throw new Error('命令回调必须为函数');
         const previous = commands.get(id);
