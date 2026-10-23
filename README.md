@@ -1,5 +1,16 @@
 # TypePro 1.7.2
 
+轻量、本地优先的 Markdown 笔记应用，支持 Apple Silicon Mac 和 Android。
+
+## 下载与开源
+
+- [最新版安装包](https://github.com/Proberen/TypePro/releases/latest)：Mac DMG、Android APK、源码 ZIP 和 SHA-256 校验文件。
+- [全部历史版本](https://github.com/Proberen/TypePro/releases)／[版本索引](docs/RELEASES.md)：1.0.0 至 1.7.2；1.3.2 仅发布过安卓包，Mac 对应使用 1.3.1。
+- [插件源码与市场](https://github.com/Proberen/typepro-plugins)：每日打卡、AI 助手及插件 SDK 独立维护，业务逻辑不放入应用壳。
+- 本仓库代码采用 [MIT](LICENSE) 许可证；第三方依赖保留各自许可证。NAS 服务源码包含在 `services/nas/`。
+
+历史标签从已交付的源码快照导入，不是原开发提交历史。安装包保留原字节，未因开源重新构建；原始源码 ZIP 作为 Release 附件保留。详情见[归档说明](docs/RELEASES.md)。
+
 ## 1.7.2 列表光标与原行缩进
 
 - 列表前缀加空格后，空项立即具有可编辑的光标行，继续输入前后位置一致。
