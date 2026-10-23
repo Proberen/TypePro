@@ -1,10 +1,11 @@
 import type { BlockOperation } from './block-controls';
+import { getBlockAnchor, getBlockTarget } from './block-targets';
 
 const LIST = /^(UL|OL)$/;
 const BLOCK = '[data-block],li';
 
 function canonicalBlock(field: HTMLElement, block: HTMLElement) {
-  return block !== field && field.contains(block) && block.matches(BLOCK)
+  return block !== field && field.contains(block) && (block.matches(BLOCK) || getBlockTarget(field, block) === block)
     && !block.closest('[data-render],.note-code-preview,.note-image-preview');
 }
 
@@ -32,7 +33,7 @@ function removeEmptyContainers(field: HTMLElement, parent: HTMLElement | null) {
 /** Move real canonical nodes so code editors, attachments and block identities survive. */
 export function applyBlockOperation(field: HTMLElement, operation: BlockOperation): HTMLElement | null {
   const { block } = operation;
-  if (!canonicalBlock(field, block)) return null;
+  if (!canonicalBlock(field, block) || getBlockTarget(field, block) !== block) return null;
   const originalParent = block.parentElement;
   let focus: HTMLElement | null;
   if (operation.type === 'delete') {
@@ -40,20 +41,19 @@ export function applyBlockOperation(field: HTMLElement, operation: BlockOperatio
     block.remove();
   } else {
     const { target, position } = operation;
-    if (!canonicalBlock(field, target) || block === target || block.contains(target) || target.contains(block)) return null;
+    if (!canonicalBlock(field, target) || getBlockAnchor(field, target) !== target || block === target || block.contains(target) || target.contains(block)) return null;
     if (block.parentElement === target.parentElement && (position === 'before' ? block.nextElementSibling === target : block.previousElementSibling === target)) return null;
     let moved = block;
-    if (target.tagName === 'LI' && block.tagName !== 'LI') {
+    if (target.tagName === 'LI') {
       moved = field.ownerDocument.createElement('li');
       moved.append(block);
-    } else if (block.tagName === 'LI' && target.tagName !== 'LI') {
-      // A list item retains its list/task semantics when moved outside its list.
-      moved = originalParent!.cloneNode(false) as HTMLElement;
-      moved.append(block); normalizeList(moved);
+    } else if (!block.matches(BLOCK) && target.parentElement?.tagName !== 'LI') {
+      moved = field.ownerDocument.createElement('p');
+      moved.setAttribute('data-block', '0'); moved.append(block);
     }
     target.parentElement!.insertBefore(moved, position === 'before' ? target : target.nextSibling);
     normalizeList(target.parentElement!);
-    focus = block;
+    focus = moved.tagName === 'P' ? moved : block;
   }
   removeEmptyContainers(field, originalParent);
   if (!field.children.length) {

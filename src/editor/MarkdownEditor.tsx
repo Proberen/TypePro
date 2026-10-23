@@ -10,6 +10,8 @@ import { installCodeUndoBridge, runIRTransaction } from './code-editor-undo';
 import { applyBlockOperation } from './block-actions';
 import { installBlockControls, type BlockOperation } from './block-controls';
 import { installImageResizeControls } from './image-resize';
+import { installListEditing } from './list-editing.js';
+import { decorateLists, hydrateListHtml } from './list-markdown.js';
 import { decorateResizableImages, persistImageWidth } from './image-dimensions';
 import { codeBlockText, createAssetRenderer, disposeEditorCodeBlocks, EDITOR_ASSETS, enhanceEditor, formatEditorCodeBlock, MARKDOWN_OPTIONS, renderReading, selectedCodeEditor, snapshotMarkdown, toggleCodeFold, refreshEditorDiagrams, retainRemovedCodeBlocks } from './rendering';
 import { EDITOR_COMMANDS, EDITOR_SHORTCUTS, INLINE_MARKERS, matchesEditorShortcut, type EditorCommand } from './commands';
@@ -109,8 +111,16 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   function collect() {
     clearTimeout(codeCollectTimer.current);
     const editor = editorRef.current;
-    if (!composing.current && editor && buffer.current.accept(snapshotMarkdown(editor))) publish();
+    if (!composing.current && editor) {
+      prepareLists(editor);
+      if (buffer.current.accept(snapshotMarkdown(editor))) publish();
+    }
     return buffer.current.value;
+  }
+  function prepareLists(editor: Vditor) {
+    const field = editor.vditor.ir!.element;
+    hydrateListHtml(field, editor.vditor.lute);
+    decorateLists(field);
   }
   function commitCodeHistory() {
     const editor = editorRef.current;
@@ -150,6 +160,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     const editor = editorRef.current;
     if (editor) {
       editor.setValue(next);
+      prepareLists(editor);
       buffer.current.baseline(snapshotMarkdown(editor));
     }
     publish();
@@ -366,8 +377,11 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     let disposed = false;
     let frame = 0;
     let restoreUndo: (() => void) | undefined;
+    let removeListEditing: (() => void) | undefined;
+    let removeListClipboard: (() => void) | undefined;
     const assets = createAssetRenderer(path => propsRef.current.resolveAsset(path));
     const enhance = () => { if (!disposed && !composing.current) {
+      if (editorRef.current) prepareLists(editorRef.current);
       decorateResizableImages(mount); assets(root); enhanceEditor(mount, propsRef.current.documentId, {
         onChange: () => { codeHistoryDirty.current = true; clearTimeout(codeCollectTimer.current); codeCollectTimer.current = setTimeout(() => { if (!disposed) collect(); }, 180); },
         onError: message => propsRef.current.onError?.(message),
@@ -402,13 +416,47 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
         editorRef.current = instance;
         restoreUndo = installCodeUndoBridge(instance.vditor, () => {
           if (disposed) return;
+          prepareLists(instance);
           decorateResizableImages(mount); assets(root);
           enhanceEditor(mount, propsRef.current.documentId, undefined, true);
           blockControls.current?.refresh(); imageControls.current?.refresh(); collect();
         });
-        instance.setValue(buffer.current.value); buffer.current.baseline(snapshotMarkdown(instance));
+        instance.setValue(buffer.current.value); prepareLists(instance); buffer.current.baseline(snapshotMarkdown(instance));
         const field = instance.vditor.ir!.element;
         field.setAttribute('role', 'textbox'); field.setAttribute('aria-label', 'Markdown 正文'); field.setAttribute('aria-multiline', 'true'); field.setAttribute('spellcheck', 'false');
+        removeListEditing = installListEditing({ field, transact: mutate => {
+          if (propsRef.current.mode !== 'edit' || composing.current) return false;
+          commitCodeHistory();
+          const changed = runIRTransaction(instance.vditor, () => {
+            if (!mutate()) return false;
+            prepareLists(instance);
+            return true;
+          });
+          if (changed) {
+            savedSelection.current = captureRichSelection(field);
+            collect(); blockControls.current?.refresh(); imageControls.current?.refresh();
+          }
+          return changed;
+        } });
+        // Vditor owns copying/cutting; strip reserved metadata after its handler.
+        const listCopies = new WeakSet<Event>();
+        const captureCopy = (event: ClipboardEvent) => {
+          const selection = field.ownerDocument.getSelection();
+          if (!selection?.rangeCount) return;
+          const range = selection.getRangeAt(0);
+          if (field.contains(range.commonAncestorContainer) && range.cloneContents().querySelector('.note-list-marker')) listCopies.add(event);
+        };
+        const cleanCopy = (event: ClipboardEvent) => {
+          if (!listCopies.has(event) || !event.defaultPrevented || !event.clipboardData) return;
+          const text = event.clipboardData.getData('text/plain');
+          event.clipboardData.setData('text/plain', text.split('<span data-typepro-list="a"/>').join(''));
+        };
+        for (const type of ['copy', 'cut'] as const) {
+          field.addEventListener(type, captureCopy, true); field.addEventListener(type, cleanCopy);
+        }
+        removeListClipboard = () => { for (const type of ['copy', 'cut'] as const) {
+          field.removeEventListener(type, captureCopy, true); field.removeEventListener(type, cleanCopy);
+        } };
         blockControls.current = installBlockControls({ host: root, field, isEnabled: () => propsRef.current.mode === 'edit', onOperation: operateBlock });
         imageControls.current = installImageResizeControls({ host: root, field, isEnabled: () => propsRef.current.mode === 'edit', onResize: ({ image, width }) => {
           documentTransaction(current => {
@@ -441,6 +489,8 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       blockControls.current?.destroy(); blockControls.current = null;
       imageControls.current?.destroy(); imageControls.current = null;
       disposeEditorCodeBlocks(mount);
+      removeListEditing?.();
+      removeListClipboard?.();
       restoreUndo?.();
       if (editorRef.current === instance) { clearTimeout(instance.vditor.ir?.processTimeoutId); clearTimeout(instance.vditor.ir?.hlToolbarTimeoutId); instance.destroy(); editorRef.current = null; }
     };
@@ -450,7 +500,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     if (props.markdown === buffer.current.value) return;
     previousSource.current = props.markdown;
     buffer.current.replace(props.markdown); setValue(props.markdown);
-    if (editorRef.current) { editorRef.current.setValue(props.markdown); buffer.current.baseline(snapshotMarkdown(editorRef.current)); getHeadings(); }
+    if (editorRef.current) { editorRef.current.setValue(props.markdown); prepareLists(editorRef.current); buffer.current.baseline(snapshotMarkdown(editorRef.current)); getHeadings(); }
   }, [props.markdown]);
   useEffect(() => {
     setSlash(null); setLinkDialog(null); setTableOpen(false); setFlow(null);

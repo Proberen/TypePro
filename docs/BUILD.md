@@ -1,5 +1,22 @@
 # 构建记录
 
+## 1.7.1 列表与组件交付（2026-10-23）
+
+本轮用户明确要求“落地打包”，已完成 Apple Silicon DMG 与 Android APK。版本为 1.7.1／Android `1007001`；应用包名、签名继承关系、插件 API 3 和同步格式保持不变，未改动或发布插件。
+
+- 修复 `-`／`1.`／`a.` 加空格创建列表；Enter 续项、Shift+Enter 项内换行、空项退格分步退出、Tab／Shift+Tab 调整层级。移动与删除只对代码、表格、独立图片、公式、流程图及 HTML 组件开放，含列表内组件。
+- 真实页面验证发现原生重绘会丢失字母列表类型；在捕获光标前复用既有列表恢复逻辑，保留字母／数字混合分组和光标位置。新增的原生重绘回归先失败、修复后通过。
+- 前端 TypeScript 与生产打包、Mac 与 Android 原生 release 构建通过；未安装新依赖。定向检查共 54 项通过：列表存储 14、列表编辑 23、组件操作 17。最终产物中的真实 App／Vditor 在隔离 Chrome 与合成数据中完成 8 项交互检查，控制台 warn／error、pageerror 为 0；包含字母列表快速续项、缩进、撤销及保存重开。原生 DOM 检查覆盖手机 beforeinput 路径，不能替代安卓输入法实机验证。
+- Mac：实际 1.7.1、arm64、`com.localnotes.notebook`，严格 codesign 与 hdiutil 校验通过；只读挂载 DMG 后的可执行文件、图标、Info.plist 与最终构建一致，Applications 链接正常。ad-hoc 签名、未公证。
+- Android：实际 1.7.1／1007001、包名不变、ARM64＋ARMv7、minSdk26／targetSdk36，签名证书与 1.7.0 相同；CRC、ZIP 16 KiB 与 ARM64 ELF LOAD 对齐通过，APK 原生载荷与本轮编译输出一致，可直接覆盖升级。
+- 按 Ponytail `ponytail-review` 对本次编辑器修正及版本交付差异统一复查：`Lean already. Ship.`。未提交、推送或发布远端代码。
+- 验证记录：`work/typepro-171-release-review/`；交付目录包含升级说明、验收记录与源码压缩包。浏览器和隔离服务已关闭；未读取正式笔记、覆盖生产 App，未验证打包 App 原生 WebView、物理安卓设备／输入法或双设备联网同步。
+
+| 产物 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.7.1-mac-arm64.dmg | 13460356 | `3a99d09a132356195cfb417ba46597a9721e9497c246566c522660da34d33686` |
+| TypePro-1.7.1-android.apk | 34284741 | `5589bdff4f056d922af4e73faaed524a82f86f3d262a0f5d7ac6aae85789b2e5` |
+
 ## 1.7.0 笔记侧栏交付（2026-10-22）
 
 已获用户明确允许本轮 DMG／APK 构建、必要检查和 AI 插件发布。App 1.7.0／Android `1007000` 提供通用 `editor.sidebar`；AI 助手 1.2.0 在插件内选择侧栏或旧宿主兼容页面，沿用 API 3 和既有同步格式。改造细节见 [侧栏改造记录](PLUGIN-SIDEBAR.md)。

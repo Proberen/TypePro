@@ -166,6 +166,9 @@
 .markdown-editor .markdown-visual { min-width:0; }
 .markdown-editor .markdown-reading { width:100%; }
 .markdown-editor .note-style-marker { display:none!important; }
+.markdown-editor .note-list-marker { display:none!important; }
+.markdown-editor .vditor-reset ol[type='a'] { list-style-type:lower-alpha; }
+.markdown-editor .vditor-ir p[data-typepro-list-exit='pending'] { padding-left:28px; }
 .markdown-editor .note-codehead { gap:7px; }
 .markdown-editor .note-codehead select { margin-right:auto; }
 .markdown-editor .note-codehead .note-code-fold { width:23px; flex:none; }
@@ -211,6 +214,7 @@
 .markdown-editor .table-dialog .table-size-label { font-size:11px; color:var(--muted,#8792a3); margin:12px 0 24px; }
 @media(max-width:1100px) { .markdown-editor .toolbar-strip { padding:0 16px; } }
 @media(max-width:700px) {
+  .markdown-editor .vditor-ir p[data-typepro-list-exit='pending'] { padding-left:26px; }
   .markdown-editor .editor-tools { height:46px; }
   .markdown-editor .toolbar-strip { padding:0 13px; gap:4px; }
   .markdown-editor .toolbar-strip button { height:33px; width:33px; }

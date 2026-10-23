@@ -5,6 +5,7 @@ import { loadFolds, reconcileFolds, saveFolds, type FoldEntry } from './folding'
 import { mountCodeEditor, type CodeEditorHandle } from './CodeMirrorEditor';
 import { safeCodeFence } from './code-editor-state';
 import { stripImageResizeDecorations } from './image-dimensions';
+import { serializeListHtml } from './list-markdown.js';
 
 export const EDITOR_ASSETS = '/vendor/vditor';
 export const MARKDOWN_OPTIONS = {
@@ -135,7 +136,7 @@ export function refreshEditorDiagrams(root: HTMLElement) {
 
 /** Serialize a clone so resolved image URLs can never escape into stored Markdown. */
 export function snapshotMarkdown(editor: Vditor) {
-  if (!editor.vditor.ir!.element.querySelector('img[data-note-asset],.note-inline-style,.note-code-preview,.note-image-preview')) return editor.getValue();
+  if (!editor.vditor.ir!.element.querySelector('img[data-note-asset],.note-inline-style,.note-code-preview,.note-image-preview,ol[type="a"],.note-list-marker')) return editor.getValue();
   const clone = editor.vditor.ir!.element.cloneNode(true) as HTMLElement;
   clone.querySelectorAll('.note-code-preview').forEach(preview => preview.remove());
   stripImageResizeDecorations(clone);
@@ -144,6 +145,7 @@ export function snapshotMarkdown(editor: Vditor) {
     image.removeAttribute('data-note-asset');
   });
   clone.querySelectorAll('.note-inline-style').forEach(span => span.replaceWith(...span.childNodes));
+  serializeListHtml(clone, editor.vditor.lute);
   return editor.vditor.lute.VditorIRDOM2Md(clone.innerHTML).replace(/\u00a0/g, ' ');
 }
 

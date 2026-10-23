@@ -1,4 +1,4 @@
-import { adjacentBlock, blockLabel, canMoveBlock, findBlockDropTarget, getBlockTarget, type BlockDropTarget } from './block-targets';
+import { adjacentBlock, blockLabel, canMoveBlock, findBlockDropTarget, getBlockAnchor, getBlockTarget, type BlockDropTarget } from './block-targets';
 import './block-controls.css';
 
 export type BlockOperation = { type: 'delete'; block: HTMLElement } | { type: 'move'; block: HTMLElement; target: HTMLElement; position: 'before' | 'after' };
@@ -118,7 +118,7 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
     [...menu.querySelectorAll<HTMLButtonElement>('button')].find(button => !button.disabled)?.focus({ preventScroll: true });
   }
   function perform(operation: BlockOperation) {
-    if (!enabled() || !valid(operation.block) || (operation.type === 'move' && (!valid(operation.target) || !canMoveBlock(operation.block, operation.target)))) return;
+    if (!enabled() || !valid(operation.block) || (operation.type === 'move' && (getBlockAnchor(field, operation.target) !== operation.target || !canMoveBlock(operation.block, operation.target)))) return;
     closeMenu(false);
     const focusControl = overlay.contains(doc.activeElement);
     onOperation(operation);
@@ -214,7 +214,7 @@ export function installBlockControls({ host, field, isEnabled, onOperation }: Bl
   function selectionChange() {
     if (gesture || overlay.contains(doc.activeElement)) return;
     const block = getBlockTarget(field, doc.getSelection()?.anchorNode || null);
-    if (block) { selected = block; choose(block); }
+    selected = block; choose(block);
   }
   function leave() { leaveTimer = setTimeout(() => choose(selected), 120); }
   function handleKey(event: KeyboardEvent) {

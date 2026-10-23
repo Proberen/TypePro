@@ -5,6 +5,15 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.7.1",
+    changes: [
+      "修复行首 -、1.、a. 加空格的列表触发，支持数字与字母自动续号。",
+      "统一列表回车续项、空项退格分步退出，以及 Tab／Shift+Tab 层级调整。",
+      "移动与删除仅用于代码、表格、独立图片、公式、流程图和 HTML 组件，列表内组件同样支持。",
+      "字母列表使用 HTML 保留编号，保存重开保留嵌套、文字样式、图片尺寸与组件内容。",
+    ],
+  },
+  {
     version: "1.7.0",
     changes: [
       "新增通用笔记侧栏：插件在正文右侧并排展示，可折叠、调宽并记住本机状态。",
