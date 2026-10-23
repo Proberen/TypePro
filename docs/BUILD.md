@@ -1,6 +1,8 @@
 # 构建记录
 
-当前源码 TypePro 1.3.2（Android versionCode `1003002`）。1.3.2 仅交付修复桌面图标的 Android APK；Mac 继续使用 1.3.1。沿用用户对本任务的 DMG／APK 与必要依赖安装授权，历史检查保留在文末。
+当前交付 TypePro 1.4.0（Android versionCode `1004000`）。已按用户本次明确许可构建 Apple Silicon DMG 与 Android APK，并完成以下针对性验证。沿用已有依赖与签名，未重新安装依赖；历史记录保留在文末。
+
+以下为可复现构建参考；本次使用现有依赖执行前端检查与 Tauri 构建，未执行 npm ci。工具版本表记录现有构建环境。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -23,12 +25,12 @@ npm ci
 CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 bash scripts/package-dmg.sh \
   src-tauri/target/release/bundle/macos/TypePro.app \
-  ../../outputs/TypePro-1.3.1-mac-arm64.dmg
+  ../../outputs/TypePro-1.4.0-mac-arm64.dmg
 ```
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.3.1-mac-arm64.dmg`。
+构建目标为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。示例显式指定输出为 `TypePro-1.4.0-mac-arm64.dmg`，已生成并通过检查。
 
 ## Android
 
@@ -50,13 +52,13 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.3.2 的 Android versionCode 明确配置为 `1003002`，高于 1.3.1 的 `1003001`；CLI 构建时重新生成 `tauri.properties`。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.4.0 的 Android versionCode 配置为 `1004000`，高于 1.3.2 的 `1003002`；CLI 构建时重新生成 `tauri.properties`。本次已完成构建。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
 ```
 
-APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`。本次为个人 release 签名，包含 ARM64 和 ARMv7，minSdk 26、targetSdk 36。ARM64 原生库使用 16KB 页面对齐。
+APK 输出路径为 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`。后续构建应沿用个人 release 签名、ARM64 和 ARMv7、minSdk 26、targetSdk 36，并检查 ARM64 原生库的 16KB 页面对齐；1.4.0 已通过以上检查，并与 1.3.2 比对签名证书一致。
 
 保留随源码交付的 Android 工程与自定义 Kotlin 文件，不要再次执行 `android init`。首次构建时 CLI 会生成 `tauri.settings.gradle`、`tauri.build.gradle.kts`、平台资源和本机路径；这些生成文件与构建缓存不在源码压缩包内。
 
@@ -70,12 +72,23 @@ Manifest 的 `@mipmap/ic_launcher` 在 Android 8 及以上通过 `mipmap-anydpi-
 
 ```sh
 codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
-hdiutil verify TypePro-1.3.1-mac-arm64.dmg
+hdiutil verify TypePro-1.4.0-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```
 
 源码包包含 npm 和 Cargo 锁文件，不包含 `node_modules`、`target`、Gradle 缓存、应用数据或签名密钥。
+
+## 1.4.0 插件市场交付与验证（2026-10-22）
+
+- 版本配置为 1.4.0／1004000；应用标识、笔记格式与 Android 签名证书保持不变。
+- 公开仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins) 已创建并完成首次自动发布；[工作流 #1](https://github.com/Proberen/typepro-plugins/actions/runs/39735747851) 的 7 项发布测试与实际 Release、清单提交成功。
+- 前端市场针对性测试 5 项、原生市场测试 3 项通过，构建中的 TypeScript 检查通过。Ponytail 仅审查本次市场差异，结论为 `Lean already. Ship.`。
+- 实际 Rust 市场模块从公开目录读取示例，并通过 GitHub Release 跳转下载 1286 字节 ZIP，大小与 SHA-256 一致；公开发布的 7 份源码与本地文件逐字节一致。未执行插件代码或访问同步凭据。
+- 隔离浏览器页直接加载真实 PluginManager、Modal 与 useAppearance，仅替换原生传输，检查搜索空结果、安装默认停用、权限确认、重新打开、同权限更新保留启用、新增权限更新停用、移除及浅色／深色显示。此项为组件验收，不能替代原生设备 UI 验收。
+- Mac：arm64、标识 `com.localnotes.notebook`、1.4.0，严格 codesign 与 DMG 完整性检查通过；ad-hoc 签名，未公证。DMG 为 13378431 字节，SHA-256 `f9c49d3e1194f158dd7d606f7b8333c3a1af73f8a0f59d487bfbf7bfa611f390`。
+- Android：1.4.0／1004000，ARM64 与 ARMv7，minSdk 26、targetSdk 36，签名与 1.3.2 一致，ZIP 与 ARM64 ELF 的 16 KiB 对齐检查通过。APK 为 33934317 字节，SHA-256 `ad53897f56ee1024d36e18c61ab4d93fac82c7dcbfdf8c3c460a044e08b82b7c`。
+- 本次未安装／覆盖用户正在运行的 Mac 应用，也未在物理手机上验收；实际笔记与私有仓库授权未用于市场验证。测试记录位于工作区 `work/typepro-140-qa/`。
 
 ## Mac 每本笔记的本地目录
 

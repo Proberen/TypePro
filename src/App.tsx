@@ -37,6 +37,7 @@ export default function App(){
  const allowLocations=!/Android|iPhone|iPad/i.test(navigator.userAgent)&&(!mobile||native);
  const [importFile,setImportFile]=useState<{name:string,bytes:Uint8Array}|null>(null),[quickQuery,setQuickQuery]=useState('');
  const editor=useRef<EditorHandle|null>(null),host=useRef<PluginHost|null>(null),activeRef=useRef<string|null>(null),contextRef=useRef<HTMLDivElement>(null),outlineToggleRef=useRef<HTMLButtonElement>(null);
+ const changingPlugins=useRef(false);
  activeRef.current=view==='editor'?docId:null;
  const activeBook=workspace?.notebooks.find(b=>b.id===bookId),activeDocument=activeBook?.documents.find(d=>d.id===docId);
  const report=useCallback((e:unknown)=>setMessage(e instanceof Error?e.message:String(e)),[]);
@@ -54,7 +55,7 @@ export default function App(){
  useEffect(()=>{try{localStorage.setItem('typepro.sidebar.width',String(width));}catch{}},[width]);
  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2600);return()=>clearTimeout(timer);},[notice]);
  useEffect(()=>{const runtime=new PluginHost({getWorkspace:()=>{collect();return current.current||{version:1,notebooks:[],plugins:[]};},getActiveDocumentId:()=>activeRef.current,replaceDocument:async(id,markdown)=>{writeDocument(id,markdown);await flush();},createDocument:async(notebookId,title,markdown)=>{if(!current.current?.notebooks.some(b=>b.id===notebookId))throw new Error('笔记不存在');const doc:NoteDocument={id:uuid(),title,markdown,updatedAt:new Date().toISOString()};update(old=>({...old,notebooks:old.notebooks.map(b=>b.id===notebookId?{...b,documents:[...b.documents,doc]}:b)}));await flush();return doc;},insertText:text=>{if(!activeRef.current||!editor.current)throw new Error('请先打开文档');editor.current.insertText(text);},onStateChange:()=>setPluginVersion(v=>v+1),onError:report,onPluginStopped:id=>update(old=>({...old,plugins:old.plugins.map(p=>p.manifest.id===id?{...p,enabled:false}:p)}))});host.current=runtime;return()=>{runtime.dispose();host.current=null;};},[current,update,flush,writeDocument,report,collect]);
- useEffect(()=>{host.current?.setPlugins(workspace?.plugins||[]);},[workspace?.plugins]);
+ useEffect(()=>{if(!changingPlugins.current)host.current?.setPlugins(workspace?.plugins||[]);},[workspace?.plugins]);
  useEffect(()=>{const timer=setTimeout(()=>host.current?.notifyDocumentChange(),300);return()=>clearTimeout(timer);},[activeDocument?.markdown,docId]);
  useEffect(()=>{const hidden=()=>{if(document.visibilityState==='hidden')void persist().catch(report);};const leave=()=>void persist().catch(report);document.addEventListener('visibilitychange',hidden);window.addEventListener('pagehide',leave);return()=>{document.removeEventListener('visibilitychange',hidden);window.removeEventListener('pagehide',leave);};},[persist,report]);
  useEffect(()=>{if(!native||/Android/i.test(navigator.userAgent))return;let disposed=false,cleanup:(()=>void)|undefined;void import('@tauri-apps/api/window').then(async({getCurrentWindow})=>{const win=getCurrentWindow();const off=await win.onCloseRequested(async event=>{event.preventDefault();try{await persist();await win.destroy();}catch(e){report(e);}});if(disposed)off();else cleanup=off;}).catch(report);return()=>{disposed=true;cleanup?.();};},[persist,report]);
@@ -66,6 +67,27 @@ export default function App(){
  function closeOutline(){setOutlineOpen(false);requestAnimationFrame(()=>outlineToggleRef.current?.focus());}
  function select(b:string,d?:string){collect();const target=current.current?.notebooks.find(n=>n.id===b);const next=d||target?.documents[0]?.id||null;if(next)recordRecentDocument(next);setBookId(b);setDocId(next);setMode('edit');setView('editor');setMobileOpen(false);setShowPanels(false);setContext(null);if(next!==docId){editor.current=null;setHeadings([]);}}
  function openLocation(id:string){collect();setContext(null);setLocationId(id);}
+ async function changePlugins(plugins:Workspace['plugins']){
+  if(changingPlugins.current)throw new Error('插件正在保存，请稍候');
+  changingPlugins.current=true;setBusy(true);
+  let previous:Workspace['plugins']|undefined;
+  try{
+   collect();
+   previous=current.current?.plugins;
+   if(!previous)throw new Error('笔记尚未加载');
+   host.current?.setPlugins(previous.filter(plugin=>plugins.includes(plugin)));
+   update(old=>({...old,plugins}));
+   await flush();
+  }catch(e){
+   if(previous){
+    const restored=previous.map(plugin=>plugins.includes(plugin)?current.current?.plugins.find(value=>value.manifest.id===plugin.manifest.id)||plugin:plugin);
+    update(old=>({...old,plugins:restored}));await flush().catch(report);
+   }
+   throw e;
+  }finally{
+   changingPlugins.current=false;host.current?.setPlugins(current.current?.plugins||[]);setBusy(false);
+  }
+ }
  async function migrateLocation(path:string|null){if(!locationId)throw new Error('笔记不存在');setBusy(true);host.current?.setPlugins([]);try{await persist();const next=await setNotebookLocation(locationId,path);replacePersisted(await loadWorkspace());return next;}finally{setBusy(false);host.current?.setPlugins(current.current?.plugins||[]);}}
  function create(kind:'book'|'document'){openDialog({type:'name',kind,bookId:bookId||undefined,value:''});}
  async function run(fn:()=>Promise<void>){setBusy(true);setMessage('');try{await fn();}catch(e){report(e);}finally{setBusy(false);}}
@@ -105,7 +127,7 @@ export default function App(){
  {dialog.type==='delete'&&<><div className="delete-icon"><Trash2 size={20}/></div><p className="dialog-copy">删除「{targetDoc?.title||targetBook?.name}」？</p><p className="muted">{dialog.docId?'删除后无法恢复。':`其中 ${targetBook?.documents.length||0} 篇文档将一并删除。`}</p><div className="form-actions"><button className="btn outline" disabled={busy} onClick={close}>取消</button><button className="btn danger" disabled={busy} onClick={()=>void remove()}>删除</button></div></>}
  {dialog.type==='move'&&<form onSubmit={move}><label className="field">选择目标笔记</label>{workspace.notebooks.filter(b=>b.id!==dialog.bookId).map((b,i)=><label className="move-option" key={b.id}><input type="radio" name="notebook" value={b.id} defaultChecked={i===0}/><BookOpen size={18}/>{b.name}</label>)}<div className="form-actions"><button type="button" className="btn outline" disabled={busy} onClick={close}>取消</button><button className="btn primary" disabled={busy}>移动</button></div></form>}
  {dialog.type==='transfer'&&<><div className="dialog-tabs">{(['import','export']as const).map(tab=><button key={tab} className={transferTab===tab?'active':''} onClick={()=>setTransferTab(tab)}>{tab==='import'?'导入':'导出'}</button>)}</div>{transferTab==='import'?<><div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const file=e.dataTransfer.files[0];if(file)void file.arrayBuffer().then(bytes=>setImportFile({name:file.name,bytes:new Uint8Array(bytes)}));}}><Upload size={27}/><h3>将文件拖到这里</h3><p>Markdown / ZIP</p><button className="btn outline" disabled={busy} onClick={()=>void run(async()=>setImportFile(await pickFile()))}>选择文件</button></div>{importFile&&<div className="file-picked"><FileText size={17}/><span>{importFile.name}</span><small>{Math.max(1,Math.round(importFile.bytes.length/1024))} KB</small><button className="icon-button" aria-label="移除文件" onClick={()=>setImportFile(null)}><X size={15}/></button></div>}</>:<><label className="field" htmlFor="export-scope">导出范围</label><select className="field-input" id="export-scope" value={exportScope} onChange={e=>{setExportScope(e.target.value);if(e.target.value!=='document')setExportFormat('zip');}}><option value="all">全部笔记</option><option value="book" disabled={!dialog.bookId}>当前笔记</option><option value="document" disabled={!dialog.docId}>当前文档</option></select><label className="field">文件格式</label><div className="transfer-formats"><button className={`format-option ${exportFormat==='zip'?'active':''}`} onClick={()=>setExportFormat('zip')}><FolderOpen size={22}/><span>ZIP<small>笔记与附件</small></span></button><button className={`format-option ${exportFormat==='md'?'active':''}`} disabled={exportScope!=='document'} onClick={()=>setExportFormat('md')}><FileText size={22}/><span>Markdown<small>单篇文档</small></span></button></div></>}<div className="form-actions"><button className="btn outline" disabled={busy} onClick={close}>取消</button><button className="btn primary" disabled={busy||(transferTab==='import'&&!importFile)} onClick={()=>void(transferTab==='import'?importNotes():exportNotes())}>{transferTab==='import'?'导入':'导出'}</button></div></>}
- {dialog.type==='plugins'&&<PluginManager plugins={workspace.plugins} onImport={()=>pickFile(true)} onChange={async plugins=>{await persist();update(old=>({...old,plugins}));await flush();}}/>}
+ {dialog.type==='plugins'&&<PluginManager plugins={workspace.plugins} onImport={()=>pickFile(true)} onChange={changePlugins}/>}
  {message&&<p className="field-error" role="alert">{message}</p>}
  </Modal>}
  {locationId&&workspace.notebooks.find(b=>b.id===locationId)&&<NotebookLocations initialError={message} notebook={workspace.notebooks.find(b=>b.id===locationId)!} onMigrate={migrateLocation} onClose={()=>{if(!busy){setLocationId(null);setMessage('');}}}/>}

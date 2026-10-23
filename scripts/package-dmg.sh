@@ -4,7 +4,7 @@ set -euo pipefail
 # Package an already built and signed Apple Silicon application.
 root=$(cd "$(dirname "$0")/.." && pwd)
 app=${1:-"$root/src-tauri/target/release/bundle/macos/TypePro.app"}
-output=${2:-"$root/TypePro-1.3.2-mac-arm64.dmg"}
+output=${2:-"$root/TypePro-1.4.0-mac-arm64.dmg"}
 if [[ ! -d "$app/Contents" ]]; then
   echo "Application bundle not found: $app" >&2
   exit 1

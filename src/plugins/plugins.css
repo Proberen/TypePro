@@ -1,7 +1,18 @@
 .plugin-manager { font-size: 13px; color: var(--text); }
 .plugin-manager button { color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .plugin-manager button:disabled { opacity: .4; cursor: not-allowed; }
+.plugin-manager button:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 3px; }
 .plugin-manager svg { width: 19px; height: 19px; stroke-width: 1.65; flex: none; }
+.plugin-tabs { display: flex; gap: 23px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.plugin-tabs button { position: relative; padding: 9px 0 13px; color: var(--muted); font-size: 13px; }
+.plugin-tabs button.active { color: var(--accent-text); }
+.plugin-tabs button.active:after { position: absolute; inset: auto 0 -1px; height: 2px; content: ''; background: var(--accent); }
+.plugin-tabs small { color: var(--muted); font-size: 10px; margin-left: 7px; }
+.plugin-market-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.plugin-search { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; height: 35px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); }
+.plugin-search:focus-within { border-color: var(--accent-ring); }
+.plugin-search input { width: 100%; min-width: 0; font: inherit; font-size: 12px; border: 0; outline: 0; color: var(--text); background: transparent; }
+.plugin-search svg { width: 16px; height: 16px; }
 .plugin-manager-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .plugin-manager .plugin-outline, .plugin-manager .plugin-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 31px; padding: 7px 11px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); background: var(--panel); border-radius: 7px; color: var(--text); }
 .plugin-manager .plugin-outline svg { width: 17px; height: 17px; }
@@ -14,9 +25,17 @@
 .plugin-info h3 { font-size: 13px; font-weight: 550; line-height: 1.5; margin: 0; overflow-wrap: anywhere; }
 .plugin-info small { color: var(--muted); font-size: 10px; font-weight: 400; margin-left: 7px; }
 .plugin-info p { color: var(--muted); font-size: 11px; line-height: 1.7; margin: 5px 0 0; overflow-wrap: anywhere; }
-.plugin-item-actions { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
+.plugin-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 9px; }
 .plugin-item-actions button { font-size: 10px; color: var(--muted); }
 .plugin-item-actions button:hover { color: var(--accent-text); background: transparent; }
+.plugin-item-actions .plugin-update-action { color: var(--accent-text); }
+.plugin-market-action { flex: none; margin-top: 2px; }
+.plugin-installed-version { font-size: 10px; color: var(--muted); }
+.plugin-installed-mark { display: inline-flex; align-items: center; flex: none; gap: 4px; margin-top: 7px; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.plugin-installed-mark svg { width: 14px; height: 14px; }
+.plugin-market-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; margin-top: 18px; }
+.plugin-market-footer button { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.plugin-market-footer svg { width: 12px; height: 12px; }
 .plugin-manager .plugin-toggle { width: 31px; height: 18px; background: var(--border); border-radius: 11px; padding: 2px; position: relative; flex: none; margin-top: 3px; }
 .plugin-toggle:after { content: ""; width: 14px; height: 14px; display: block; background: #fff; box-shadow: 0 1px 3px #14213d24; border-radius: 50%; transition: transform .16s; }
 .plugin-manager .plugin-toggle.plugin-on { background: var(--accent); }
@@ -28,7 +47,17 @@
 .plugin-permissions { margin: 15px 0; }
 .plugin-permission { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.7; }
 .plugin-permission svg { width: 17px; color: var(--accent-text); margin-top: 1px; }
+.plugin-permission>span { flex: 1; }
+.plugin-permission>small { color: var(--accent-text); font-size: 10px; }
 .plugin-permission-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+.plugin-update-note, .plugin-status { color: var(--accent-text); font-size: 11px; line-height: 1.7; margin: 12px 0 0; }
 .plugin-empty { color: var(--muted); padding: 30px 0; margin: 0; font-size: 12px; }
 .plugin-error { color: var(--danger); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; margin: 12px 0 0; }
+@media (max-width: 700px) {
+  .plugin-item { gap: 10px; }
+  .plugin-mark { width: 31px; height: 31px; }
+  .plugin-manager .plugin-market-action { padding: 7px 8px; min-height: 35px; font-size: 11px; gap: 5px; }
+  .plugin-market-action svg { width: 14px; height: 14px; }
+  .plugin-manager .plugin-permission-actions button { min-height: 36px; }
+}
 @media (prefers-reduced-motion: reduce) { .plugin-toggle:after { transition: none; } }

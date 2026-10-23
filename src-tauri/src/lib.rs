@@ -1,5 +1,6 @@
 mod github;
 mod github_secrets;
+mod plugin_market;
 mod storage;
 mod transfer;
 use github::{
@@ -12,6 +13,7 @@ use tauri::{AppHandle, Manager, State, WebviewWindow};
 struct Store(Mutex<Storage>);
 // Optional sync initialization must never prevent access to local notebooks.
 struct GithubService(Result<Github, String>);
+struct PluginMarketService(Result<plugin_market::Market, String>);
 impl GithubService {
     fn get(&self) -> Response<&Github> {
         self.0.as_ref().map_err(Clone::clone)
@@ -243,6 +245,34 @@ async fn github_disconnect(
     let github = github.get()?;
     github.disconnect(&app).await
 }
+#[tauri::command]
+async fn plugin_market_catalog(
+    window: WebviewWindow,
+    market: State<'_, PluginMarketService>,
+) -> Response<plugin_market::Catalog> {
+    if window.label() != "main" {
+        return Err("窗口无权访问插件市场".into());
+    }
+    market.0.as_ref().map_err(Clone::clone)?.catalog().await
+}
+#[tauri::command]
+async fn plugin_market_download(
+    window: WebviewWindow,
+    market: State<'_, PluginMarketService>,
+    id: String,
+    version: String,
+    sha256: String,
+) -> Response<Vec<u8>> {
+    if window.label() != "main" {
+        return Err("窗口无权访问插件市场".into());
+    }
+    market
+        .0
+        .as_ref()
+        .map_err(Clone::clone)?
+        .download(&id, &version, &sha256)
+        .await
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -254,12 +284,15 @@ pub fn run() {
         .setup(|app| {
             let data = app.path().app_data_dir()?;
             app.manage(GithubService(Github::new(data.join("github-sync"))));
+            app.manage(PluginMarketService(plugin_market::Market::new()));
             let root = data.join("workspace");
             std::fs::create_dir_all(&root)?;
             app.manage(Store(Mutex::new(Storage::new(root))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            plugin_market_catalog,
+            plugin_market_download,
             github_status,
             github_configure,
             github_start_authorization,
