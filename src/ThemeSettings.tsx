@@ -5,10 +5,9 @@ export interface AppearanceSettings {
   theme: "light" | "dark" | "system";
   accent: string;
   font: number;
-  width: number;
 }
 
-const DEFAULTS: AppearanceSettings = { theme: "light", accent: "#74ade5", font: 17, width: 720 };
+const DEFAULTS: AppearanceSettings = { theme: "light", accent: "#74ade5", font: 17 };
 const STORAGE_KEY = "typepro.appearance.v1";
 const HEX = /^#[0-9a-f]{6}$/i;
 const SWATCHES = [["#74ade5", "浅蓝"], ["#79c4b2", "薄荷"], ["#b2a0e4", "紫藤"], ["#e8b28b", "杏色"], ["#dfa0ad", "玫瑰"], ["#9aa8ba", "石灰"]] as const;
@@ -18,7 +17,6 @@ function normalize(input: Partial<AppearanceSettings>): AppearanceSettings {
     theme: input.theme === "dark" || input.theme === "system" ? input.theme : "light",
     accent: typeof input.accent === "string" && HEX.test(input.accent) ? input.accent.toLowerCase() : DEFAULTS.accent,
     font: typeof input.font === "number" && Number.isFinite(input.font) ? Math.max(14, Math.min(22, Math.round(input.font))) : DEFAULTS.font,
-    width: typeof input.width === "number" && Number.isFinite(input.width) ? Math.max(580, Math.min(900, Math.round(input.width))) : DEFAULTS.width,
   };
 }
 
@@ -67,7 +65,6 @@ export function useAppearance() {
       "--accent-wash": wash,
       "--accent-ring": mix(settings.accent, dark ? "#304054" : "#ffffff", 0.48),
       "--document-font": `${settings.font}px`,
-      "--document-w": `${settings.width}px`,
     };
     Object.entries(variables).forEach(([key, value]) => root.style.setProperty(key, value));
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch { /* Preferences remain usable when storage is unavailable. */ }
@@ -108,7 +105,6 @@ export default function ThemeSettings({ settings, onChange, onReset, onClose }: 
     <div className="tp-settings-preview"><pre><span className="tp-code-keyword">const</span>{" note = "}<span className="tp-code-string">'TypePro'</span>{";\nconsole."}<span className="tp-code-function">log</span>{"(note);\n"}<span className="tp-code-comment">// 让文字保持清晰</span></pre></div>
     <div className="tp-settings-divider" />
     <div className="tp-range-row"><label htmlFor={`${id}-font`}>正文字号</label><input id={`${id}-font`} type="range" min={14} max={22} value={settings.font} onChange={event => onChange({ font: Number(event.target.value) })} /><output htmlFor={`${id}-font`}>{settings.font}px</output></div>
-    <div className="tp-range-row"><label htmlFor={`${id}-width`}>正文宽度</label><input id={`${id}-width`} type="range" min={580} max={900} step={20} value={settings.width} onChange={event => onChange({ width: Number(event.target.value) })} /><output htmlFor={`${id}-width`}>{settings.width}px</output></div>
     <footer className="tp-appearance-footer"><button className="tp-button tp-ghost" type="button" onClick={() => { setHex(DEFAULTS.accent.toUpperCase()); setInvalid(false); onReset(); }}>重置</button><button className="tp-button tp-primary" type="button" onClick={onClose}>完成</button></footer>
   </section>;
 }

@@ -78,6 +78,25 @@ pub struct Asset {
     pub path: String,
     pub url: String,
 }
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NotebookLocation {
+    pub path: String,
+    pub custom: bool,
+}
+// Deliberately separate from Workspace, Index and Manifest: absolute paths belong to this Mac.
+#[derive(Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Locations {
+    version: u8,
+    notebooks: BTreeMap<String, PathBuf>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocationOwner {
+    version: u8,
+    notebook: String,
+}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentIndex {
@@ -297,15 +316,325 @@ fn filename(title: &str) -> String {
     }
 }
 
+fn checked_path(root: &Path, relative: &Path) -> Result<PathBuf> {
+    let mut path = root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Err("存储路径不能包含跳转目录".into());
+        };
+        path.push(component);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err("笔记存储目录中不能使用符号链接".into());
+            }
+            Ok(_) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(err(error)),
+        }
+    }
+    Ok(path)
+}
+
+fn notebook_references(notebook: &Notebook) -> Result<BTreeSet<String>> {
+    let mut references = BTreeSet::new();
+    if let Some(cover) = cover_asset(notebook.cover.as_deref())? {
+        references.insert(cover.to_string());
+    }
+    for document in &notebook.documents {
+        references.extend(asset_references(&document.markdown));
+    }
+    Ok(references)
+}
+
 impl Storage {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root: fs::canonicalize(&root).unwrap_or(root),
+        }
+    }
+    fn locations(&self) -> Result<Locations> {
+        let path = checked_path(&self.root, Path::new("locations.json"))?;
+        if !path.exists() {
+            return Ok(Locations {
+                version: 1,
+                ..Locations::default()
+            });
+        }
+        let locations: Locations = serde_json::from_slice(&read_limited(&path, 1024 * 1024)?)
+            .map_err(|e| format!("本机目录设置无法读取，已保留原文件：{e}"))?;
+        if locations.version != 1 || locations.notebooks.len() > 1000 {
+            return Err("不支持的本机目录设置".into());
+        }
+        for (notebook, path) in &locations.notebooks {
+            valid_id(notebook)?;
+            if !path.is_absolute() {
+                return Err("本机目录设置中包含无效路径".into());
+            }
+        }
+        Ok(locations)
+    }
+    fn notebook_root(&self, notebook: &str, locations: &Locations) -> Result<PathBuf> {
+        let Some(path) = locations.notebooks.get(notebook) else {
+            return Ok(self.root.clone());
+        };
+        let canonical = fs::canonicalize(path)
+            .map_err(|e| format!("笔记目录不可用：{}（{e}）", path.display()))?;
+        if &canonical != path {
+            return Err("笔记目录位置已变化，请恢复原目录后重试".into());
+        }
+        let owner: LocationOwner = serde_json::from_slice(&read_limited(
+            &checked_path(path, Path::new(".typepro-notebook.json"))?,
+            4096,
+        )?)
+        .map_err(|_| "笔记目录标识损坏，已保留原文件".to_string())?;
+        if owner.version != 1 || owner.notebook != notebook {
+            return Err("笔记目录与当前笔记不匹配，已保留原文件".into());
+        }
+        Ok(path.clone())
+    }
+    fn asset_bytes(&self, reference: &str, locations: &Locations) -> Result<Vec<u8>> {
+        self.find_asset(reference, locations)?
+            .ok_or_else(|| format!("找不到笔记引用的附件：{reference}"))
+    }
+    fn find_asset(&self, reference: &str, locations: &Locations) -> Result<Option<Vec<u8>>> {
+        let name = asset_name(reference)?;
+        let relative = Path::new("assets").join(name);
+        let global = checked_path(&self.root, &relative)?;
+        if global.exists() {
+            return read_limited(&global, MAX_ASSET).map(Some);
+        }
+        // Externally edited Markdown can introduce an attachment that exists only beside it.
+        for notebook in locations.notebooks.keys() {
+            let Ok(root) = self.notebook_root(notebook, locations) else {
+                continue;
+            };
+            let path = checked_path(&root, &relative)?;
+            if path.exists() {
+                return read_limited(&path, MAX_ASSET).map(Some);
+            }
+        }
+        Ok(None)
+    }
+    fn copy_assets(
+        &self,
+        notebook: &Notebook,
+        root: &Path,
+        locations: &Locations,
+        require_all: bool,
+    ) -> Result<()> {
+        for reference in notebook_references(notebook)? {
+            let name = asset_name(&reference)?;
+            let Some(bytes) = self.find_asset(&reference, locations)? else {
+                if require_all {
+                    return Err(format!("找不到笔记引用的附件：{name}"));
+                }
+                // An already missing image must not prevent saving unrelated legacy Markdown.
+                continue;
+            };
+            let target = checked_path(root, &Path::new("assets").join(name))?;
+            if target.exists() {
+                if read_limited(&target, MAX_ASSET)? != bytes {
+                    return Err(format!("附件名称冲突，未覆盖原文件：{name}"));
+                }
+            } else {
+                atomic_write(&target, &bytes)?;
+            }
+        }
+        Ok(())
+    }
+    pub fn get_notebook_location(&self, notebook_id: &str) -> Result<NotebookLocation> {
+        if cfg!(mobile) {
+            return Err("手机版不支持自定义笔记目录".into());
+        }
+        let workspace = self.load()?;
+        if !workspace.notebooks.iter().any(|n| n.id == notebook_id) {
+            return Err("笔记本不存在".into());
+        }
+        let locations = self.locations()?;
+        Ok(NotebookLocation {
+            path: self
+                .notebook_root(notebook_id, &locations)?
+                .to_string_lossy()
+                .into_owned(),
+            custom: locations.notebooks.contains_key(notebook_id),
+        })
+    }
+    pub fn set_notebook_location(
+        &self,
+        notebook_id: &str,
+        path: Option<&str>,
+    ) -> Result<NotebookLocation> {
+        if cfg!(mobile) {
+            return Err("手机版不支持自定义笔记目录".into());
+        }
+        valid_id(notebook_id)?;
+        let workspace = self.load()?;
+        let notebook = workspace
+            .notebooks
+            .iter()
+            .find(|n| n.id == notebook_id)
+            .ok_or("笔记本不存在")?;
+        let mut locations = self.locations()?;
+        let source = self.notebook_root(notebook_id, &locations)?;
+        let default = fs::canonicalize(&self.root).map_err(err)?;
+        let target = if let Some(path) = path {
+            let expanded = if let Some(relative) = path.strip_prefix("~/") {
+                PathBuf::from(std::env::var_os("HOME").ok_or("无法确定用户目录")?).join(relative)
+            } else {
+                PathBuf::from(path)
+            };
+            if !expanded.is_absolute()
+                || expanded
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return Err("请选择绝对路径，不能包含 ..".into());
+            }
+            // The native picker selects existing directories. Typed paths must likewise exist;
+            // never create a potentially mistyped parent tree outside the chosen directory.
+            let target =
+                fs::canonicalize(&expanded).map_err(|e| format!("目录不存在或无法访问：{e}"))?;
+            if !target.is_dir() {
+                return Err("请选择文件夹".into());
+            }
+            target
+        } else {
+            default.clone()
+        };
+        if source == target {
+            return self.get_notebook_location(notebook_id);
+        }
+        if path.is_some() && (target.starts_with(&default) || default.starts_with(&target)) {
+            return Err("自定义目录不能位于应用存储目录内或包含应用存储目录".into());
+        }
+        for (other, root) in &locations.notebooks {
+            if (other != notebook_id || root != &target)
+                && (target.starts_with(root) || root.starts_with(&target))
+            {
+                return Err("笔记目录不能重叠或互相包含".into());
+            }
+        }
+        if source.starts_with(&target) || target.starts_with(&source) {
+            return Err("新旧笔记目录不能互相包含".into());
+        }
+        if target != default {
+            let marker = checked_path(&target, Path::new(".typepro-notebook.json"))?;
+            if marker.exists() {
+                let owner: LocationOwner =
+                    serde_json::from_slice(&read_limited(&marker, 4096)?).map_err(err)?;
+                if owner.version != 1 || owner.notebook != notebook_id {
+                    return Err("此目录属于其他笔记，请选择空文件夹".into());
+                }
+            } else if fs::read_dir(&target).map_err(err)?.next().is_some() {
+                return Err("请选择空文件夹，或此笔记以前使用的目录".into());
+            }
+        }
+        // Stage and validate every byte before touching any live document or the path mapping.
+        let stage = checked_path(
+            &target,
+            &PathBuf::from(format!(".typepro-migrate-{}", id())),
+        )?;
+        fs::create_dir(&stage).map_err(err)?;
+        let result = (|| {
+            self.copy_assets(notebook, &stage, &locations, true)?;
+            for document in &notebook.documents {
+                atomic_write(
+                    &stage.join(document_path(notebook_id, &document.id)),
+                    document.markdown.as_bytes(),
+                )?;
+            }
+            let staged_book = stage.join("notebooks").join(notebook_id);
+            fs::create_dir_all(&staged_book).map_err(err)?;
+            let target_book = checked_path(&target, &Path::new("notebooks").join(notebook_id))?;
+            let assets = checked_path(&target, Path::new("assets"))?;
+            fs::create_dir_all(&assets).map_err(err)?;
+            for reference in notebook_references(notebook)? {
+                let name = asset_name(&reference)?;
+                let destination = checked_path(&target, &Path::new("assets").join(name))?;
+                let bytes = read_limited(&stage.join("assets").join(name), MAX_ASSET)?;
+                if destination.exists() && read_limited(&destination, MAX_ASSET)? != bytes {
+                    return Err(format!("附件名称冲突，未覆盖原文件：{name}"));
+                }
+                if !destination.exists() {
+                    atomic_write(&destination, &bytes)?;
+                }
+            }
+            if target != default {
+                atomic_write(
+                    &target.join(".typepro-notebook.json"),
+                    &serde_json::to_vec(&LocationOwner {
+                        version: 1,
+                        notebook: notebook_id.to_string(),
+                    })
+                    .map_err(err)?,
+                )?;
+            }
+            if source == default {
+                // Keep the original default copy even after a later notebook deletion.
+                atomic_write(
+                    &checked_path(
+                        &source,
+                        &Path::new("notebooks")
+                            .join(notebook_id)
+                            .join(".typepro-preserved"),
+                    )?,
+                    b"1",
+                )?;
+            }
+            fs::create_dir_all(target_book.parent().ok_or("无效的笔记目录")?).map_err(err)?;
+            let backup = if target_book.exists() {
+                let history = checked_path(
+                    &target,
+                    &Path::new(".typepro-history").join(notebook_id).join(id()),
+                )?;
+                fs::create_dir_all(history.parent().ok_or("无效的备份目录")?).map_err(err)?;
+                fs::rename(&target_book, &history).map_err(err)?;
+                Some(history)
+            } else {
+                None
+            };
+            if let Err(error) = fs::rename(&staged_book, &target_book) {
+                if let Some(backup) = backup {
+                    let _ = fs::rename(backup, &target_book);
+                }
+                return Err(err(error));
+            }
+            #[cfg(unix)]
+            File::open(target_book.parent().ok_or("无效的笔记目录")?)
+                .and_then(|directory| directory.sync_all())
+                .map_err(err)?;
+            if target == default {
+                locations.notebooks.remove(notebook_id);
+            } else {
+                locations
+                    .notebooks
+                    .insert(notebook_id.to_string(), target.clone());
+            }
+            let bytes = serde_json::to_vec_pretty(&locations).map_err(err)?;
+            let location_path = self.root.join("locations.json");
+            if let Err(error) = atomic_write(&location_path, &bytes) {
+                // A directory fsync can fail after the atomic rename already committed.
+                if fs::read(&location_path).ok().as_deref() != Some(bytes.as_slice()) {
+                    return Err(error);
+                }
+            }
+            Ok(NotebookLocation {
+                path: target.to_string_lossy().into_owned(),
+                custom: target != default,
+            })
+        })();
+        let _ = fs::remove_dir_all(stage);
+        result
     }
     fn apply(&self, workspace: &Workspace) -> Result<()> {
         validate(workspace)?;
+        let locations = self.locations()?;
         for notebook in &workspace.notebooks {
+            let root = self.notebook_root(&notebook.id, &locations)?;
+            self.copy_assets(notebook, &root, &locations, false)?;
             for document in &notebook.documents {
-                let path = self.root.join(document_path(&notebook.id, &document.id));
+                let path =
+                    checked_path(&root, Path::new(&document_path(&notebook.id, &document.id)))?;
                 // Avoid rewriting unchanged files, keeping external editors and file watchers useful.
                 if fs::read(&path).ok().as_deref() != Some(document.markdown.as_bytes()) {
                     atomic_write(&path, document.markdown.as_bytes())?;
@@ -347,12 +676,15 @@ impl Storage {
             notebooks: vec![],
             plugins: index.plugins,
         };
+        let locations = self.locations()?;
         for notebook in index.notebooks {
             valid_id(&notebook.id)?;
+            let root = self.notebook_root(&notebook.id, &locations)?;
             let mut documents = vec![];
             for document in notebook.documents {
                 valid_id(&document.id)?;
-                let path = self.root.join(document_path(&notebook.id, &document.id));
+                let path =
+                    checked_path(&root, Path::new(&document_path(&notebook.id, &document.id)))?;
                 let markdown = String::from_utf8(read_limited(&path, MAX_DOC)?).map_err(err)?;
                 documents.push(Document {
                     id: document.id,
@@ -378,6 +710,12 @@ impl Storage {
         if self.root.join("index.json").exists() {
             self.load()?;
         }
+        let locations = self.locations()?;
+        for notebook in &workspace.notebooks {
+            let root = self.notebook_root(&notebook.id, &locations)?;
+            // Input errors must not leave a recovery journal that retries invalid data forever.
+            self.copy_assets(notebook, &root, &locations, false)?;
+        }
         atomic_write(
             &self.root.join("pending.json"),
             &serde_json::to_vec(workspace).map_err(err)?,
@@ -385,6 +723,17 @@ impl Storage {
         self.apply(workspace)?;
         fs::remove_file(self.root.join("pending.json")).map_err(err)?;
         self.clean_removed_documents(workspace);
+        let mut locations = self.locations()?;
+        let old_count = locations.notebooks.len();
+        locations
+            .notebooks
+            .retain(|id, _| workspace.notebooks.iter().any(|n| &n.id == id));
+        if locations.notebooks.len() != old_count {
+            atomic_write(
+                &self.root.join("locations.json"),
+                &serde_json::to_vec_pretty(&locations).map_err(err)?,
+            )?;
+        }
         Ok(())
     }
     fn clean_removed_documents(&self, workspace: &Workspace) {
@@ -406,6 +755,9 @@ impl Storage {
             let Ok(documents) = fs::read_dir(notebook.path()) else {
                 continue;
             };
+            if notebook.path().join(".typepro-preserved").exists() {
+                continue;
+            }
             for document in documents.flatten() {
                 let path = document.path();
                 let Some(d) = path.file_stem().and_then(|d| d.to_str()) else {
@@ -426,7 +778,10 @@ impl Storage {
             return Err("单个附件不能超过 32 MB".into());
         }
         let name = format!("{}.{}", id(), extension(name));
-        atomic_write(&self.root.join("assets").join(&name), bytes)?;
+        atomic_write(
+            &checked_path(&self.root, &Path::new("assets").join(&name))?,
+            bytes,
+        )?;
         Ok(Asset {
             path: format!("../../assets/{name}"),
             url: data_uri(&name, bytes),
@@ -434,7 +789,7 @@ impl Storage {
     }
     pub fn resolve_asset(&self, reference: &str) -> Result<String> {
         let name = asset_name(reference)?;
-        let bytes = read_limited(&self.root.join("assets").join(name), MAX_ASSET)?;
+        let bytes = self.asset_bytes(reference, &self.locations()?)?;
         Ok(data_uri(name, &bytes))
     }
     fn selection(&self, notebook_id: Option<&str>, document_id: Option<&str>) -> Result<Workspace> {
@@ -502,7 +857,7 @@ impl Storage {
         }
         for reference in references {
             let name = asset_name(&reference)?;
-            let bytes = read_limited(&self.root.join("assets").join(name), MAX_ASSET)?;
+            let bytes = self.asset_bytes(&reference, &self.locations()?)?;
             total += bytes.len();
             if total as u64 > MAX_TOTAL {
                 return Err("导出内容超过 256 MB，请分笔记本导出".into());
@@ -945,5 +1300,402 @@ mod tests {
         let mut invalid = sample();
         invalid.notebooks[0].id = "../../escape".into();
         assert!(s.save(&invalid).is_err());
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn custom_directory_migration_keeps_sources_and_relative_attachments() {
+        let (_dir, s) = store();
+        let target = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        let asset = s.save_asset("image.png", b"portable image").unwrap();
+        workspace.notebooks[0].cover = Some(asset.path.clone());
+        workspace.notebooks[0].documents[0]
+            .markdown
+            .push_str(&format!("\n![image]({})", asset.path));
+        s.save(&workspace).unwrap();
+        let book = &workspace.notebooks[0];
+        let relative = document_path(&book.id, &book.documents[0].id);
+        let original = fs::read(s.root.join(&relative)).unwrap();
+        let location = s
+            .set_notebook_location(&book.id, target.path().to_str())
+            .unwrap();
+        let target = PathBuf::from(&location.path);
+        assert!(location.custom);
+        assert_eq!(fs::read(target.join(&relative)).unwrap(), original);
+        assert_eq!(fs::read(s.root.join(&relative)).unwrap(), original);
+        assert_eq!(
+            fs::read(target.join("assets").join(asset_name(&asset.path).unwrap())).unwrap(),
+            b"portable image"
+        );
+        // Relative paths resolve as ordinary files, without TypePro or an absolute path rewrite.
+        assert_eq!(
+            fs::read(target.join(&relative).parent().unwrap().join(&asset.path)).unwrap(),
+            b"portable image"
+        );
+        assert_eq!(s.load().unwrap(), workspace);
+        assert_eq!(s.get_notebook_location(&book.id).unwrap(), location);
+        assert!(!serde_json::to_string(&workspace)
+            .unwrap()
+            .contains(&location.path));
+        let bundle = s.export(Some(&book.id), None).unwrap();
+        let mut zip = ZipArchive::new(Cursor::new(&bundle.bytes)).unwrap();
+        assert!(zip.by_name("locations.json").is_err());
+        let mut manifest = String::new();
+        zip.by_name("manifest.json")
+            .unwrap()
+            .read_to_string(&mut manifest)
+            .unwrap();
+        assert!(!manifest.contains(&location.path));
+        let (_portable_dir, portable) = store();
+        let imported = portable
+            .import("notebook.zip", &bundle.bytes, None)
+            .unwrap();
+        assert_eq!(
+            portable
+                .resolve_asset(imported.notebooks[0].cover.as_deref().unwrap())
+                .unwrap(),
+            asset.url
+        );
+        assert!(!portable.root.join("locations.json").exists());
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn custom_directory_saves_new_assets_external_changes_and_return_to_default() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        s.save(&workspace).unwrap();
+        let book_id = workspace.notebooks[0].id.clone();
+        let relative = document_path(&book_id, &workspace.notebooks[0].documents[0].id);
+        let original = fs::read(s.root.join(&relative)).unwrap();
+        let location = s
+            .set_notebook_location(&book_id, external.path().to_str())
+            .unwrap();
+        let root = PathBuf::from(location.path);
+        let asset = s.save_asset("new.svg", b"new asset").unwrap();
+        workspace.notebooks[0].documents[0].markdown =
+            format!("new content\n![new]({})", asset.path);
+        s.save(&workspace).unwrap();
+        assert_eq!(fs::read(s.root.join(&relative)).unwrap(), original);
+        assert_eq!(
+            fs::read(root.join("assets").join(asset_name(&asset.path).unwrap())).unwrap(),
+            b"new asset"
+        );
+        // An external edit and a new adjacent attachment are visible to load, resolve and ZIP.
+        let external_name = format!("{}.png", id());
+        fs::write(root.join("assets").join(&external_name), b"external asset").unwrap();
+        let external_reference = format!("../../assets/{external_name}");
+        let markdown = format!("# external\n![outside]({external_reference})");
+        fs::write(root.join(&relative), &markdown).unwrap();
+        let loaded = s.load().unwrap();
+        assert_eq!(loaded.notebooks[0].documents[0].markdown, markdown);
+        assert!(s
+            .resolve_asset(&external_reference)
+            .unwrap()
+            .ends_with(&STANDARD.encode(b"external asset")));
+        let bundle = s.export(Some(&book_id), None).unwrap();
+        let (_portable_dir, portable) = store();
+        let imported = portable
+            .import("external.zip", &bundle.bytes, None)
+            .unwrap();
+        let imported_reference = asset_references(&imported.notebooks[0].documents[0].markdown)
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(portable
+            .resolve_asset(&imported_reference)
+            .unwrap()
+            .ends_with(&STANDARD.encode(b"external asset")));
+        let location = s.set_notebook_location(&book_id, None).unwrap();
+        assert!(!location.custom);
+        assert_eq!(
+            fs::read_to_string(s.root.join(&relative)).unwrap(),
+            markdown
+        );
+        assert_eq!(fs::read_to_string(root.join(&relative)).unwrap(), markdown);
+        let history = s.root.join(".typepro-history").join(&book_id);
+        let backup = fs::read_dir(history)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            fs::read(backup.join(Path::new(&relative).file_name().unwrap())).unwrap(),
+            original
+        );
+        assert_eq!(s.load().unwrap(), loaded);
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn failed_migration_and_path_collisions_leave_source_usable() {
+        let (_dir, s) = store();
+        let target = tempfile::tempdir().unwrap();
+        let workspace = sample();
+        s.save(&workspace).unwrap();
+        let book = &workspace.notebooks[0];
+        let relative = document_path(&book.id, &book.documents[0].id);
+        fs::write(target.path().join("unrelated.txt"), b"do not touch").unwrap();
+        assert!(s
+            .set_notebook_location(&book.id, target.path().to_str())
+            .is_err());
+        assert_eq!(
+            fs::read(target.path().join("unrelated.txt")).unwrap(),
+            b"do not touch"
+        );
+        fs::remove_file(target.path().join("unrelated.txt")).unwrap();
+        // A managed destination with a blocked document directory fails after staging bytes.
+        atomic_write(
+            &target.path().join(".typepro-notebook.json"),
+            &serde_json::to_vec(&LocationOwner {
+                version: 1,
+                notebook: book.id.clone(),
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(target.path().join("notebooks"), b"blocked").unwrap();
+        assert!(s
+            .set_notebook_location(&book.id, target.path().to_str())
+            .is_err());
+        assert_eq!(s.load().unwrap(), workspace);
+        assert_eq!(
+            fs::read_to_string(s.root.join(&relative)).unwrap(),
+            book.documents[0].markdown
+        );
+        assert!(!s.root.join("locations.json").exists());
+        assert!(!fs::read_dir(target.path()).unwrap().any(|f| f
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".typepro-migrate-")));
+        assert!(s
+            .set_notebook_location(&book.id, Some("relative/folder"))
+            .is_err());
+        assert!(s
+            .set_notebook_location(&book.id, Some("/tmp/../escape"))
+            .is_err());
+        let nested = s.root.join("nested");
+        fs::create_dir(&nested).unwrap();
+        assert!(s.set_notebook_location(&book.id, nested.to_str()).is_err());
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn external_directory_unavailability_never_falls_back_to_stale_default_copy() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let workspace = sample();
+        s.save(&workspace).unwrap();
+        let book = &workspace.notebooks[0];
+        let location = s
+            .set_notebook_location(&book.id, external.path().to_str())
+            .unwrap();
+        let root = PathBuf::from(location.path);
+        fs::remove_file(root.join(".typepro-notebook.json")).unwrap();
+        assert!(s.load().is_err());
+        assert!(s.save(&Workspace::default()).is_err());
+        assert!(!s.root.join("pending.json").exists());
+        let index: Index =
+            serde_json::from_slice(&fs::read(s.root.join("index.json")).unwrap()).unwrap();
+        assert_eq!(index.notebooks.len(), 1);
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn pending_save_recovers_into_mapped_directory_and_asset_collision_is_not_journaled() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        s.save(&workspace).unwrap();
+        let book_id = workspace.notebooks[0].id.clone();
+        s.set_notebook_location(&book_id, external.path().to_str())
+            .unwrap();
+        let relative = document_path(&book_id, &workspace.notebooks[0].documents[0].id);
+        workspace.notebooks[0].documents[0].markdown = "recovered external save".into();
+        atomic_write(
+            &s.root.join("pending.json"),
+            &serde_json::to_vec(&workspace).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(s.load().unwrap(), workspace);
+        assert_eq!(
+            fs::read_to_string(external.path().join(&relative)).unwrap(),
+            "recovered external save"
+        );
+        let asset = s.save_asset("conflict.png", b"original asset").unwrap();
+        fs::write(
+            external
+                .path()
+                .join("assets")
+                .join(asset_name(&asset.path).unwrap()),
+            b"conflicting asset",
+        )
+        .unwrap();
+        workspace.notebooks[0].documents[0].markdown = format!("![conflict]({})", asset.path);
+        assert!(s.save(&workspace).is_err());
+        assert!(!s.root.join("pending.json").exists());
+        assert_eq!(
+            s.load().unwrap().notebooks[0].documents[0].markdown,
+            "recovered external save"
+        );
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn empty_notebook_migrates_and_missing_legacy_attachment_does_not_block_save() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        workspace.notebooks[0].documents.clear();
+        s.save(&workspace).unwrap();
+        let book_id = workspace.notebooks[0].id.clone();
+        s.set_notebook_location(&book_id, external.path().to_str())
+            .unwrap();
+        assert_eq!(s.load().unwrap(), workspace);
+        workspace.notebooks[0].documents.push(Document {
+            id: id(),
+            title: "missing old image".into(),
+            updated_at: "".into(),
+            markdown: format!("![missing](../../assets/{}.png)", id()),
+        });
+        s.save(&workspace).unwrap();
+        assert_eq!(s.load().unwrap(), workspace);
+        let another = tempfile::tempdir().unwrap();
+        assert!(s
+            .set_notebook_location(&book_id, another.path().to_str())
+            .is_err());
+        assert!(fs::read_dir(another.path()).unwrap().next().is_none());
+        assert!(s.get_notebook_location(&book_id).unwrap().custom);
+    }
+    #[test]
+    #[cfg(not(mobile))]
+    fn moving_document_out_of_external_notebook_copies_its_external_only_asset() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let second_external = tempfile::tempdir().unwrap();
+        let mut workspace = sample();
+        workspace.notebooks.push(Notebook {
+            id: id(),
+            name: "default".into(),
+            cover: None,
+            documents: vec![],
+        });
+        workspace.notebooks.push(Notebook {
+            id: id(),
+            name: "external 2".into(),
+            cover: None,
+            documents: vec![],
+        });
+        s.save(&workspace).unwrap();
+        let first_id = workspace.notebooks[0].id.clone();
+        let third_id = workspace.notebooks[2].id.clone();
+        s.set_notebook_location(&first_id, external.path().to_str())
+            .unwrap();
+        s.set_notebook_location(&third_id, second_external.path().to_str())
+            .unwrap();
+        let asset_name = format!("{}.png", id());
+        let reference = format!("../../assets/{asset_name}");
+        fs::write(
+            external.path().join("assets").join(&asset_name),
+            b"external only",
+        )
+        .unwrap();
+        workspace.notebooks[0].documents[0].markdown = format!("![asset]({reference})");
+        let document = workspace.notebooks[0].documents.remove(0);
+        workspace.notebooks[1].documents.push(document.clone());
+        workspace.notebooks[2].documents.push(Document {
+            id: id(),
+            ..document
+        });
+        s.save(&workspace).unwrap();
+        assert_eq!(
+            fs::read(s.root.join("assets").join(&asset_name)).unwrap(),
+            b"external only"
+        );
+        assert_eq!(
+            fs::read(second_external.path().join("assets").join(&asset_name)).unwrap(),
+            b"external only"
+        );
+        assert_eq!(s.load().unwrap(), workspace);
+        workspace.notebooks.remove(0);
+        s.save(&workspace).unwrap();
+        assert!(!s.locations().unwrap().notebooks.contains_key(&first_id));
+        assert!(external.path().join(".typepro-notebook.json").exists());
+    }
+    #[test]
+    #[cfg(all(unix, not(mobile)))]
+    fn custom_directories_reject_overlap_and_symlinked_markdown_without_overwriting() {
+        let (_dir, s) = store();
+        let external = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let workspace = sample();
+        s.save(&workspace).unwrap();
+        let book = &workspace.notebooks[0];
+        let location = s
+            .set_notebook_location(&book.id, external.path().to_str())
+            .unwrap();
+        let root = PathBuf::from(location.path);
+        let nested = root.join("nested");
+        fs::create_dir(&nested).unwrap();
+        assert!(s.set_notebook_location(&book.id, nested.to_str()).is_err());
+        let relative = document_path(&book.id, &book.documents[0].id);
+        fs::remove_file(root.join(&relative)).unwrap();
+        let victim = outside.path().join("victim.md");
+        fs::write(&victim, "untouched").unwrap();
+        std::os::unix::fs::symlink(&victim, root.join(&relative)).unwrap();
+        assert!(s.load().is_err());
+        assert!(s.save(&workspace).is_err());
+        assert_eq!(fs::read_to_string(victim).unwrap(), "untouched");
+        assert!(!s.root.join("pending.json").exists());
+    }
+    #[test]
+    #[cfg(all(unix, not(mobile)))]
+    fn failed_location_commit_keeps_old_mapping_and_can_be_retried() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_dir, s) = store();
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let workspace = sample();
+        s.save(&workspace).unwrap();
+        let book = &workspace.notebooks[0];
+        let old_location = s
+            .set_notebook_location(&book.id, first.path().to_str())
+            .unwrap();
+        let mapping = fs::read(s.root.join("locations.json")).unwrap();
+        let permissions = fs::metadata(&s.root).unwrap().permissions();
+        fs::set_permissions(&s.root, fs::Permissions::from_mode(0o500)).unwrap();
+        let failed = s.set_notebook_location(&book.id, second.path().to_str());
+        fs::set_permissions(&s.root, permissions).unwrap();
+        assert!(failed.is_err());
+        assert_eq!(fs::read(s.root.join("locations.json")).unwrap(), mapping);
+        assert_eq!(s.get_notebook_location(&book.id).unwrap(), old_location);
+        assert_eq!(s.load().unwrap(), workspace);
+        let relative = document_path(&book.id, &book.documents[0].id);
+        assert_eq!(
+            fs::read_to_string(first.path().join(&relative)).unwrap(),
+            book.documents[0].markdown
+        );
+        assert_eq!(
+            fs::read_to_string(second.path().join(&relative)).unwrap(),
+            book.documents[0].markdown
+        );
+        assert!(
+            s.set_notebook_location(&book.id, second.path().to_str())
+                .unwrap()
+                .custom
+        );
+        assert_eq!(s.load().unwrap(), workspace);
+    }
+    #[test]
+    #[cfg(mobile)]
+    fn mobile_directory_commands_are_disabled_before_any_filesystem_access() {
+        let (_dir, s) = store();
+        assert!(s
+            .get_notebook_location("not-an-id")
+            .unwrap_err()
+            .contains("手机版"));
+        assert!(s
+            .set_notebook_location("not-an-id", Some("/tmp"))
+            .unwrap_err()
+            .contains("手机版"));
+        assert!(!s.root.join("locations.json").exists());
     }
 }

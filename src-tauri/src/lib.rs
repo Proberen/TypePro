@@ -1,7 +1,7 @@
 mod storage;
 mod transfer;
 use std::sync::Mutex;
-use storage::{Asset, Storage, TransferFile, Workspace};
+use storage::{Asset, NotebookLocation, Storage, TransferFile, Workspace};
 use tauri::{Manager, State, WebviewWindow};
 struct Store(Mutex<Storage>);
 type Response<T> = Result<T, String>;
@@ -88,6 +88,25 @@ async fn get_storage_path(window: WebviewWindow, state: State<'_, Store>) -> Res
         Ok(s.root.to_string_lossy().into_owned())
     })
 }
+#[tauri::command]
+async fn get_notebook_location(
+    window: WebviewWindow,
+    state: State<'_, Store>,
+    notebook_id: String,
+) -> Response<NotebookLocation> {
+    access(&window, &state, |s| s.get_notebook_location(&notebook_id))
+}
+#[tauri::command]
+async fn set_notebook_location(
+    window: WebviewWindow,
+    state: State<'_, Store>,
+    notebook_id: String,
+    path: Option<String>,
+) -> Response<NotebookLocation> {
+    access(&window, &state, |s| {
+        s.set_notebook_location(&notebook_id, path.as_deref())
+    })
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -110,6 +129,8 @@ pub fn run() {
             save_asset,
             resolve_asset,
             get_storage_path,
+            get_notebook_location,
+            set_notebook_location,
             transfer::write_transfer_uri,
             transfer::get_transfer_name
         ])

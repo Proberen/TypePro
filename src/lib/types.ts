@@ -27,7 +27,7 @@ export interface Workspace {
   notebooks: Notebook[];
   plugins: InstalledPlugin[];
 }
-export type EditorMode = "edit" | "source" | "read";
+export type EditorMode = "edit" | "read";
 export interface TransferFile {
   name: string;
   bytes: number[];

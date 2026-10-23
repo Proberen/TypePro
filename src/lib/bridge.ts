@@ -20,6 +20,18 @@ export const loadWorkspace = () => command<Workspace>("load_workspace");
 export const saveWorkspace = (workspace: Workspace) =>
   command<void>("save_workspace", { workspace });
 
+export interface NotebookLocation { path: string; custom: boolean }
+export const getNotebookLocation = (notebookId: string) =>
+  command<NotebookLocation>("get_notebook_location", { notebookId });
+export const setNotebookLocation = (notebookId: string, path: string | null) =>
+  command<NotebookLocation>("set_notebook_location", { notebookId, path });
+export async function pickNotebookDirectory(): Promise<string | null> {
+  if (!native) throw new Error("请在 Mac 应用中选择文件夹；浏览器预览可输入目录。");
+  if (/Android/i.test(navigator.userAgent)) throw new Error("手机版不支持自定义目录。");
+  const path = await open({ directory: true, multiple: false, title: "选择笔记存储目录" });
+  return typeof path === "string" ? path : null;
+}
+
 export async function pickFile(
   plugin = false,
 ): Promise<{ name: string; bytes: Uint8Array } | null> {

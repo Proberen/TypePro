@@ -2,7 +2,7 @@ export interface RichSelection { range: Range; start: number; end: number }
 
 function textNodes(root: HTMLElement) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(node) {
-    return node.parentElement?.closest('[data-render],.vditor-ir__preview') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    return node.parentElement?.closest('[data-render],.vditor-ir__preview,.vditor-ir__marker:not(pre)') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
   } });
   const nodes: Text[] = [];
   while (walker.nextNode()) nodes.push(walker.currentNode as Text);
@@ -13,7 +13,7 @@ function position(root: HTMLElement, node: Node, offset: number) {
   range.selectNodeContents(root);
   range.setEnd(node, offset);
   const clone = range.cloneContents();
-  clone.querySelectorAll('[data-render],.vditor-ir__preview').forEach(el => el.remove());
+  clone.querySelectorAll('[data-render],.vditor-ir__preview,.vditor-ir__marker:not(pre)').forEach(el => el.remove());
   return clone.textContent?.length || 0;
 }
 export function captureRichSelection(root: HTMLElement): RichSelection | null {
@@ -21,6 +21,14 @@ export function captureRichSelection(root: HTMLElement): RichSelection | null {
   if (!selection?.rangeCount || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) return null;
   const range = selection.getRangeAt(0).cloneRange();
   return { range, start: position(root, range.startContainer, range.startOffset), end: position(root, range.endContainer, range.endOffset) };
+}
+/** A range start at a block boundary belongs to the following text, not the previous heading. */
+export function locateTextOffset(lengths: number[], offset: number, end: boolean): [number, number] {
+  for (let index = 0; index < lengths.length; index++) {
+    if (offset < lengths[index] || (end && offset === lengths[index])) return [index, offset];
+    offset -= lengths[index];
+  }
+  return [lengths.length - 1, lengths[lengths.length - 1] || 0];
 }
 export function restoreRichSelection(root: HTMLElement, saved: RichSelection | null) {
   let range = saved?.range;
@@ -31,13 +39,12 @@ export function restoreRichSelection(root: HTMLElement, saved: RichSelection | n
     range.collapse(false);
     if (saved) {
       const nodes = textNodes(root);
-      const locate = (offset: number): [Node, number] => {
-        for (const node of nodes) { if (offset <= node.length) return [node, offset]; offset -= node.length; }
-        const last = nodes[nodes.length - 1];
-        return last ? [last, last.length] : [root, 0];
+      const locate = (offset: number, end: boolean): [Node, number] => {
+        const [index, position] = locateTextOffset(nodes.map(node => node.length), offset, end);
+        return nodes[index] ? [nodes[index], position] : [root, 0];
       };
-      range.setStart(...locate(saved.start));
-      range.setEnd(...locate(saved.end));
+      range.setStart(...locate(saved.start, false));
+      range.setEnd(...locate(saved.end, saved.end !== saved.start));
     }
   }
   const selection = window.getSelection();
@@ -46,16 +53,3 @@ export function restoreRichSelection(root: HTMLElement, saved: RichSelection | n
   return range;
 }
 
-/** Textarea selection offsets omit CR bytes from CRLF, while stored Markdown retains them. */
-export function sourceOffset(text: string, textareaPosition: number) {
-  let visible = 0;
-  let offset = 0;
-  while (offset < text.length && visible < textareaPosition) {
-    if (!(text[offset] === '\r' && text[offset + 1] === '\n')) visible++;
-    offset++;
-  }
-  return offset;
-}
-export function textareaOffset(text: string, sourcePosition: number) {
-  return text.slice(0, sourcePosition).replace(/\r\n/g, '\n').length;
-}

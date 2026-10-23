@@ -4,7 +4,7 @@
 .markdown-editor .markdown-visual { flex:1; min-height:0; border:0; border-radius:0; background:var(--bg,#fff); }
 .markdown-editor .vditor-content { min-height:0; }
 .markdown-editor .vditor-ir { overflow:auto; background:var(--bg,#fff); }
-.markdown-editor .vditor-ir pre.vditor-reset,.markdown-editor .note-reading-content { box-sizing:border-box; width:100%; max-width:calc(var(--document-w,720px) + 80px); margin:0 auto; padding:61px 40px 80px!important; }
+.markdown-editor .vditor-ir pre.vditor-reset,.markdown-editor .note-reading-content { box-sizing:border-box; width:100%; max-width:none; margin:0; padding:64px 40px 80px!important; }
 .markdown-editor .vditor-ir pre.vditor-reset { min-height:100%; background:var(--bg,#fff); }
 .markdown-editor .vditor-toolbar,.markdown-editor .vditor-counter,.markdown-editor .vditor-resize { display:none!important; }
 .markdown-editor .vditor-reset { color:var(--body-text,#3c4758); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; font-size:var(--document-font,17px); line-height:1.85; letter-spacing:normal; overflow-wrap:anywhere; }
@@ -83,14 +83,7 @@
 .markdown-editor[data-theme='dark'] .note-diagram svg text { fill:var(--text,#e2e9f4)!important; }
 .markdown-editor[data-theme='dark'] .note-diagram svg .node rect { fill:var(--code,#1d2531)!important; stroke:var(--muted,#8492a7)!important; }
 .markdown-editor .note-diagram-error { color:var(--danger,#c44b52); font-size:13px; text-align:left; }
-.markdown-editor .markdown-source-wrap { display:flex; flex-direction:column; flex:1; min-height:0; }
-.markdown-editor .editor-source-label { display:flex; justify-content:space-between; flex-shrink:0; width:calc(100% - 80px); max-width:var(--document-w,720px); margin:0 auto; padding:61px 0 20px; font-size:11px; color:var(--muted,#8792a3); }
-.markdown-editor .markdown-source { width:100%; flex:1; min-height:0; border:0; outline:0; resize:none; padding:0 max(40px,calc((100% - var(--document-w,720px))/2)) 80px; color:var(--body-text,#3c4758); background:var(--bg,#fff); font:14px/1.9 'SFMono-Regular',Consolas,'PingFang SC',monospace; tab-size:2; box-sizing:border-box; }
 .markdown-editor .markdown-reading { flex:1; min-height:0; overflow-y:auto; }
-.markdown-editor .editor-floating-toolbar { position:absolute; z-index:8; display:flex; gap:2px; padding:4px; border:1px solid var(--editor-border); border-radius:8px; background:var(--panel,#fff); box-shadow:var(--shadow,0 6px 22px #27344916); transform:translateX(-50%); }
-.markdown-editor .editor-floating-toolbar button { display:inline-flex; align-items:center; justify-content:center; width:34px; height:32px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--body-text,#3c4758); font-size:15px; }
-.markdown-editor .editor-floating-toolbar button:hover { background:var(--accent-wash,#edf5fd); color:var(--accent-text,#286496); }
-.markdown-editor .editor-mobile-toolbar { display:none; }
 .markdown-editor .vditor-panel { border-color:var(--editor-border); background:var(--panel,#fff); color:var(--text,#243044); }
 .markdown-editor .vditor-reset .vditor-toc { padding:12px 0; }
 .markdown-editor .vditor-reset .vditor-toc span { cursor:pointer; }
@@ -127,13 +120,11 @@
 .markdown-editor .editor-link-dialog footer button { min-height:38px; padding:10px 16px; border:1px solid var(--editor-border); border-radius:7px; font-size:13px; }
 .markdown-editor .editor-link-dialog footer button[type='submit'] { background:var(--accent,#74ade5); color:var(--on-accent,#153652); border-color:transparent; }
 @media (max-width:1000px) {
-  .markdown-editor .vditor-ir pre.vditor-reset,.markdown-editor .note-reading-content { padding:45px 28px 80px!important; max-width:calc(var(--document-w,720px) + 56px); }
-  .markdown-editor .editor-source-label { width:calc(100% - 56px); padding-top:45px; }
-  .markdown-editor .markdown-source { padding:0 max(28px,calc((100% - var(--document-w,720px))/2)) 80px; }
+  .markdown-editor .vditor-ir pre.vditor-reset,.markdown-editor .note-reading-content { padding:64px 40px 80px!important; max-width:none; }
 }
 @media (max-width:700px) {
   .markdown-editor .vditor-reset { font-size:calc(var(--document-font,17px) - 1px); line-height:1.85; }
-  .markdown-editor .vditor-ir pre.vditor-reset,.markdown-editor .note-reading-content { padding:32px 24px 45px!important; }
+  .markdown-editor .vditor-ir pre.vditor-reset,.markdown-editor .note-reading-content { padding:64px 24px 45px!important; }
   .markdown-editor .vditor-reset > h1:first-of-type { font-size:27px; letter-spacing:-.6px; line-height:1.5; min-height:40px; margin-bottom:23px; }
   .markdown-editor .vditor-reset h2 { font-size:21px; line-height:1.55; margin:29px 0 15px; }
   .markdown-editor .vditor-reset h3 { font-size:18px; }
@@ -148,12 +139,6 @@
   .markdown-editor .note-codehead { height:34px; padding:0 10px; font-size:10px; }
   .markdown-editor .vditor-ir [data-type='code-block'].vditor-ir__node--expand > pre { font-size:11px; padding:12px 12px 12px 40px; }
   .markdown-editor .vditor-ir [data-type='code-block'].vditor-ir__node--expand > pre::before { top:12px; width:27px; padding-right:8px; }
-  .markdown-editor .editor-source-label { width:calc(100% - 48px); padding-top:32px; font-size:10px; }
-  .markdown-editor .markdown-source { padding:0 24px 45px; font-size:12px; }
-  .markdown-editor .editor-floating-toolbar { display:none; }
-  .markdown-editor .editor-mobile-toolbar { position:relative; display:flex; flex-shrink:0; justify-content:space-around; align-items:center; height:46px; box-sizing:content-box; border-top:1px solid var(--editor-border); padding:0 10px env(safe-area-inset-bottom,0px); background:var(--bg,#fff); z-index:10; }
-  .markdown-editor .editor-mobile-toolbar > button { display:grid; place-items:center; width:44px; height:40px; padding:0; border:0; border-radius:6px; color:var(--muted,#8792a3); background:transparent; font-size:16px; }
-  .markdown-editor .editor-mobile-toolbar button:active { background:var(--accent-wash,#edf5fd); color:var(--accent-text,#286496); }
   .markdown-editor .editor-slash-menu { left:10px!important; right:10px!important; bottom:9px!important; top:auto!important; width:auto; max-height:80%; border-radius:13px; }
   .markdown-editor .editor-slash-results { max-height:320px; }
   .markdown-editor .editor-slash-item { min-height:39px; }
@@ -161,4 +146,62 @@
   .markdown-editor .editor-slash-search { padding:13px 15px; }
   .markdown-editor .editor-slash-search input { font-size:14px; }
   .markdown-editor .editor-slash-categories button { font-size:11px; padding:6px 9px; }
+}
+
+.markdown-editor .editor-surface { display:flex; flex:1; min-height:0; min-width:0; position:relative; }
+.markdown-editor .markdown-visual { min-width:0; }
+.markdown-editor .markdown-reading { width:100%; }
+.markdown-editor .note-style-marker { display:none!important; }
+.markdown-editor .note-codehead { gap:7px; }
+.markdown-editor .note-codehead select { margin-right:auto; }
+.markdown-editor .note-codehead .note-code-fold { width:23px; flex:none; }
+.markdown-editor .note-code-lines { font-size:10px; color:var(--muted,#8792a3); white-space:nowrap; }
+.markdown-editor .note-code-collapsed .note-code-fold svg { transform:rotate(-90deg); }
+.markdown-editor .note-code-collapsed .note-code-content { display:none!important; }
+.markdown-editor .note-code-collapsed .note-codehead { border-bottom:0; }
+.markdown-editor .vditor-ir [data-type='code-block'].note-code-collapsed > pre { display:none!important; }
+.markdown-editor .vditor-ir .note-code-collapsed .note-codebox { border-bottom:1px solid var(--editor-border); border-radius:8px; }
+.markdown-editor .note-flow-block { border:1px solid var(--editor-border); border-radius:8px; overflow:hidden; margin:20px 0 28px; }
+.markdown-editor .note-code-preview .note-flow-block { margin:0; }
+.markdown-editor .note-flow-block .note-codehead button { width:auto; padding:0 6px; font-size:11px; }
+.markdown-editor .note-flow-block .note-diagram { padding:22px; }
+.markdown-editor .vditor-ir__node--expand .note-flow-block .note-diagram { display:block; }
+.markdown-editor .editor-tools { height:48px; flex:none; position:relative; z-index:25; border-bottom:1px solid var(--editor-border); background:var(--bg,#fff); min-width:0; }
+.markdown-editor .toolbar-strip { height:100%; display:flex; align-items:center; gap:3px; padding:0 30px; overflow-x:auto; scrollbar-width:none; }
+.markdown-editor .toolbar-strip::-webkit-scrollbar { display:none; }
+.markdown-editor .toolbar-strip button { width:31px; height:31px; display:inline-flex; align-items:center; justify-content:center; flex:none; padding:0; border:0; background:transparent; border-radius:5px; color:var(--body-text,#3c4758); cursor:pointer; }
+.markdown-editor .toolbar-strip button:hover,.markdown-editor .toolbar-strip [aria-pressed='true'] { background:var(--accent-wash,#edf5fd); color:var(--accent-text,#286496); }
+.markdown-editor .toolbar-strip select { appearance:none; border:0; border-radius:5px; color:var(--body-text,#3c4758); background:var(--bg,#fff) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%238792a3' stroke-width='1.2'/%3E%3C/svg%3E") no-repeat right 7px center; font-size:12px; width:106px; height:31px; padding:0 23px 0 8px; flex:none; cursor:pointer; }
+.markdown-editor .toolbar-strip select[aria-label='正文或标题'] { width:84px; }
+.markdown-editor .tool-separator { width:1px; height:17px; background:var(--editor-border); flex:none; margin:0 5px; }
+.markdown-editor .toolbar-popover { position:absolute; top:43px; z-index:28; width:246px; box-sizing:content-box; background:var(--panel,#fff); border:1px solid var(--editor-border); border-radius:9px; padding:15px; box-shadow:var(--shadow,0 12px 40px #24304418); }
+.markdown-editor .toolbar-popover h3 { font-size:12px; font-weight:550; margin:0 0 14px; }
+.markdown-editor .text-colors { display:flex; gap:8px; }
+.markdown-editor .text-colors button { background:var(--text-color); width:23px; height:23px; padding:0; border-radius:50%; border:3px solid var(--panel,#fff); outline:1px solid var(--editor-border); cursor:pointer; }
+.markdown-editor .toolbar-custom-color { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted,#8792a3); margin:18px 0 11px; }
+.markdown-editor .toolbar-custom-color input { width:27px; height:27px; padding:0; border:0; background:none; }
+.markdown-editor .plain-tool { border:0; background:none; font-size:11px; color:var(--body-text,#3c4758); padding:6px 0; cursor:pointer; }
+.markdown-editor .more-tools { display:grid; grid-template-columns:1fr 1fr; gap:3px; }
+.markdown-editor .more-tools button { display:flex; align-items:center; gap:9px; text-align:left; padding:10px 5px; border:0; background:none; color:var(--body-text,#3c4758); border-radius:5px; font-size:11px; cursor:pointer; }
+.markdown-editor .more-tools button:hover { background:var(--accent-wash,#edf5fd); }
+.markdown-editor .more-tools svg { color:var(--muted,#8792a3); }
+.markdown-editor .table-dialog { width:380px; }
+.markdown-editor .table-size { display:flex; align-items:center; gap:15px; }
+.markdown-editor .table-size label { display:flex; align-items:center; gap:10px; flex:1; font-size:12px; min-width:0; }
+.markdown-editor .table-size input { width:78px; min-width:0; margin:0; border:1px solid var(--editor-border); border-radius:6px; background:var(--bg,#fff); padding:9px; font-size:13px; }
+.markdown-editor .table-size>span { color:var(--muted,#8792a3); }
+.markdown-editor .table-dialog .table-header-option { color:var(--muted,#8792a3); font-size:11px; margin:20px 0; }
+.markdown-editor .table-grid { display:grid; gap:3px; min-height:20px; }
+.markdown-editor .table-grid i { height:20px; border:1px solid var(--accent-ring,#bdd9f3); border-radius:2px; background:var(--bg,#fff); }
+.markdown-editor .table-grid .th { background:var(--accent-wash,#edf5fd); }
+.markdown-editor .table-dialog .table-size-label { font-size:11px; color:var(--muted,#8792a3); margin:12px 0 24px; }
+@media(max-width:1100px) { .markdown-editor .toolbar-strip { padding:0 16px; } }
+@media(max-width:700px) {
+  .markdown-editor .editor-tools { height:46px; }
+  .markdown-editor .toolbar-strip { padding:0 13px; gap:4px; }
+  .markdown-editor .toolbar-strip button { height:33px; width:33px; }
+  .markdown-editor .toolbar-strip select { font-size:11px; width:98px; }
+  .markdown-editor .toolbar-strip select[aria-label='正文或标题'] { width:77px; }
+  .markdown-editor .toolbar-popover { top:42px; }
+  .markdown-editor .tool-separator { margin:0 4px; }
 }

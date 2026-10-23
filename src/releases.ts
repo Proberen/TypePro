@@ -5,6 +5,16 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.2.0",
+    changes: [
+      "按审阅原型重做编辑页：两栏布局、正文内嵌套大纲，单图标切换编辑与阅读。",
+      "正文工具区：字体、文字颜色、标题、格式、列表、链接、图片、公式与 M×N 表格。",
+      "流程图支持可视化绘制与 Mermaid 源码实时预览。",
+      "代码块独立折叠，重新打开后保持状态。",
+      "Mac 每本笔记可选择本地目录，支持迁移与回迁，并保留旧目录文件。",
+    ],
+  },
+  {
     version: "1.1.0",
     changes: [
       "TypePro 新首页：笔记列表、搜索与最近文档。",
@@ -29,7 +39,7 @@ export const RELEASES: readonly Release[] = [
 
 export const UPGRADE_NOTES = [
   { title: "更新前", text: "建议先通过“导入 / 导出”导出全部笔记为 ZIP，保留一份备份。" },
-  { title: "Mac", text: "退出旧版“笔记”，打开 DMG，将 TypePro 拖入“应用程序”。新版沿用原有数据目录；旧应用名称不同，可能仍会保留，请使用 TypePro 打开笔记。" },
+  { title: "Mac", text: "退出旧版 TypePro（或“笔记”），打开 DMG，将 TypePro 拖入“应用程序”。新版沿用原有数据目录；旧应用名称不同，可能仍会保留，请使用 TypePro 打开笔记。" },
   { title: "Android", text: "使用相同签名与包名的新版 APK 直接覆盖安装。请勿先卸载旧版，卸载会删除应用内的本地数据。" },
-  { title: "版本兼容", text: "1.1.0 可以读取旧版笔记。包含封面的新版索引请继续用新版打开，1.0.0 不支持该索引。" },
+  { title: "版本兼容", text: "1.2.0 沿用已有笔记与附件。自定义目录配置仅保存在当前 Mac；跨设备请使用 ZIP 导入导出。字体与文字颜色通过内嵌 HTML 保存。" },
 ] as const;

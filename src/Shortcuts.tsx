@@ -6,7 +6,7 @@ export const APP_SHORTCUTS=[
  {id:'quick-open',label:'快速打开文档',group:'文件',binding:'Mod+Shift+KeyO',keys:'⌘ ⇧ O'},
  {id:'save',label:'保存',group:'文件',binding:'Mod+KeyS',keys:'⌘ S'},
  {id:'theme',label:'外观设置',group:'文件',binding:'Mod+Comma',keys:'⌘ ,'},
- {id:'source',label:'源码 / 编辑切换',group:'视图',binding:'Mod+Slash',keys:'⌘ /'},
+ {id:'toggle-mode',label:'编辑 / 阅读切换',group:'视图',binding:'Mod+Slash',keys:'⌘ /'},
  {id:'sidebar',label:'展开 / 收起目录',group:'视图',binding:'Mod+Shift+KeyL',keys:'⌘ ⇧ L'},
  {id:'outline',label:'文档大纲',group:'视图',binding:'Mod+Ctrl+Digit1',keys:'⌘ ⌃ 1'},
  {id:'documents',label:'文档目录',group:'视图',binding:'Mod+Ctrl+Digit3',keys:'⌘ ⌃ 3'},

@@ -1,4 +1,7 @@
 import Vditor from 'vditor';
+import { renderFlowPreview } from '../flow/preview';
+import { decorateInlineStyles } from './formatting';
+import { loadFolds, reconcileFolds, saveFolds, type FoldEntry } from './folding';
 
 export const EDITOR_ASSETS = '/vendor/vditor';
 export const MARKDOWN_OPTIONS = {
@@ -53,69 +56,74 @@ function createCodeBox(text: string, language: string, editable: boolean) {
   return box;
 }
 
-interface MermaidEngine {
-  initialize(options: Record<string, unknown>): void;
-  render(id: string, source: string): Promise<{ svg: string }>;
+const foldCache = new Map<string, FoldEntry[]>();
+function foldEntries(documentId: string) {
+  if (!foldCache.has(documentId)) foldCache.set(documentId, loadFolds(documentId));
+  return foldCache.get(documentId)!;
+}
+function applyFold(block: HTMLElement, collapsed: boolean) {
+  block.classList.toggle('note-code-collapsed', collapsed);
+  const button = block.querySelector<HTMLButtonElement>('[data-fold-code]');
+  if (button) {
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.setAttribute('aria-label', collapsed ? '展开代码块' : '折叠代码块');
+    button.title = collapsed ? '展开代码块' : '折叠代码块';
+  }
+}
+export function toggleCodeFold(button: HTMLButtonElement, documentId: string, onError?: (message: string) => void) {
+  const block = button.closest<HTMLElement>('[data-fold-id]');
+  const entry = foldEntries(documentId).find(entry => entry.id === block?.dataset.foldId);
+  if (!block || !entry) return;
+  entry.collapsed = !entry.collapsed; applyFold(block, entry.collapsed);
+  try { saveFolds(documentId, foldEntries(documentId)); }
+  catch { onError?.('折叠状态无法保存，请检查设备剩余空间'); }
+}
+function decorateFolds(root: HTMLElement, documentId: string) {
+  const blocks = [...root.querySelectorAll<HTMLElement>('[data-type="code-block"],.note-codebox')].filter(block =>
+    !block.parentElement?.closest('[data-type="code-block"]') && !block.querySelector('code.language-mermaid'));
+  const previous = foldEntries(documentId);
+  const entries = reconcileFolds(previous, blocks.map(block => ({ id: block.dataset.foldId, code: block.querySelector('code')?.textContent || '' })), () => crypto.randomUUID());
+  foldCache.set(documentId, entries);
+  blocks.forEach((block, index) => {
+    const entry = entries[index]; block.dataset.foldId = entry.id;
+    const header = block.querySelector('.note-codehead');
+    if (header && !header.querySelector('[data-fold-code]')) {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.foldCode = 'true'; button.className = 'note-code-fold';
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>';
+      const lines = document.createElement('span'); lines.className = 'note-code-lines'; lines.textContent = `${entry.code.replace(/\n$/, '').split('\n').length} 行`;
+      header.prepend(button); header.querySelector('select')?.after(lines);
+    }
+    applyFold(block, entry.collapsed);
+  });
+  if (JSON.stringify(entries) !== JSON.stringify(previous)) {
+    try { saveFolds(documentId, entries); } catch { /* Explicit toggles report persistence failures. */ }
+  }
+}
+function createDiagramPreview(source: string, editable: boolean) {
+  const box = document.createElement('div'); box.className = 'note-flow-block'; box.dataset.diagramSource = source;
+  const header = document.createElement('div'); header.className = 'note-codehead';
+  const label = document.createElement('span'); label.textContent = '流程图'; header.append(label);
+  if (editable) { const edit = document.createElement('button'); edit.type = 'button'; edit.dataset.editFlow = 'true'; edit.textContent = '编辑'; edit.setAttribute('aria-label', '编辑流程图'); header.append(edit); }
+  const preview = document.createElement('div'); preview.className = 'note-diagram'; box.append(header, preview);
+  void renderFlowPreview(preview, source); return box;
 }
 
-let mermaidPromise: Promise<MermaidEngine> | undefined;
-let diagramNumber = 0;
-
-function getMermaid() {
-  if (!mermaidPromise) {
-    mermaidPromise = new Promise<MermaidEngine>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = `${EDITOR_ASSETS}/dist/js/mermaid/mermaid.min.js`;
-      script.onload = () => {
-        const engine = (window as unknown as { mermaid: MermaidEngine }).mermaid;
-        engine.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          suppressErrorRendering: true,
-          theme: 'neutral',
-          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
-          maxTextSize: 100_000,
-          maxEdges: 1_000,
-        });
-        resolve(engine);
-      };
-      script.onerror = () => {
-        script.remove();
-        mermaidPromise = undefined;
-        reject(new Error('图表组件加载失败'));
-      };
-      document.head.appendChild(script);
-    });
-  }
-  return mermaidPromise;
-}
-
-async function renderDiagram(element: HTMLElement, source: string) {
-  element.dataset.diagramSource = source;
-  try {
-    const mermaid = await getMermaid();
-    const result = await mermaid.render(`noteDiagram${++diagramNumber}`, source);
-    if (!element.isConnected || element.dataset.diagramSource !== source) return;
-    element.innerHTML = result.svg;
-    element.classList.remove('note-diagram-error');
-  } catch (error) {
-    if (!element.isConnected || element.dataset.diagramSource !== source) return;
-    element.textContent = '图表语法有误';
-    element.title = error instanceof Error ? error.message : String(error);
-    element.classList.add('note-diagram-error');
-  }
+export function refreshEditorDiagrams(root: HTMLElement) {
+  root.querySelectorAll<HTMLElement>('.note-flow-block').forEach(block => {
+    const preview = block.querySelector<HTMLElement>('.note-diagram');
+    if (preview && block.dataset.diagramSource !== undefined) void renderFlowPreview(preview, block.dataset.diagramSource);
+  });
 }
 
 /** Serialize a clone so resolved image URLs can never escape into stored Markdown. */
 export function snapshotMarkdown(editor: Vditor) {
-  if (!editor.vditor.ir!.element.querySelector('img[data-note-asset]')) return editor.getValue();
+  if (!editor.vditor.ir!.element.querySelector('img[data-note-asset],.note-inline-style')) return editor.getValue();
   const clone = editor.vditor.ir!.element.cloneNode(true) as HTMLElement;
   clone.querySelectorAll<HTMLImageElement>('img[data-note-asset]').forEach((image) => {
     image.setAttribute('src', image.dataset.noteAsset!);
     image.removeAttribute('data-note-asset');
   });
+  clone.querySelectorAll('.note-inline-style').forEach(span => span.replaceWith(...span.childNodes));
   return editor.vditor.lute.VditorIRDOM2Md(clone.innerHTML).replace(/\u00a0/g, ' ');
 }
 
@@ -142,7 +150,8 @@ export function createAssetRenderer(resolveAsset: (path: string) => Promise<stri
 }
 
 /** Opt into only local code highlighting and Mermaid; Vditor's network renderers stay off. */
-export function enhanceEditor(root: HTMLElement) {
+export function enhanceEditor(root: HTMLElement, documentId: string) {
+  decorateInlineStyles(root);
   root.querySelectorAll<HTMLElement>('[data-type="code-block"]').forEach((block) => {
     const source = block.querySelector<HTMLElement>(':scope > pre.vditor-ir__marker--pre');
     const code = source?.querySelector('code');
@@ -151,6 +160,8 @@ export function enhanceEditor(root: HTMLElement) {
     const language = [...code.classList].find((name) => name.startsWith('language-')) || '';
     source.dataset.lineNumbers = text.replace(/\n$/, '').split('\n').map((_, index) => index + 1).join('\n');
     let preview = block.querySelector<HTMLElement>(':scope > .note-code-preview');
+    const languageSelect = preview?.querySelector<HTMLSelectElement>('[data-code-language]');
+    if (languageSelect) languageSelect.value = language.replace(/^language-/, '') || 'plaintext';
     if (preview?.dataset.source === text && preview.dataset.language === language) return;
     if (!preview) {
       preview = document.createElement('div');
@@ -164,17 +175,17 @@ export function enhanceEditor(root: HTMLElement) {
     preview.dataset.language = language;
     preview.replaceChildren();
     if (language === 'language-mermaid') {
-      preview.classList.add('note-diagram');
-      void renderDiagram(preview, text);
+      preview.append(createDiagramPreview(text, true));
     } else {
       preview.classList.remove('note-diagram');
       preview.append(createCodeBox(text, language.replace(/^language-/, ''), true));
       Vditor.highlightRender(HIGHLIGHT_OPTIONS, preview, EDITOR_ASSETS);
     }
   });
+  decorateFolds(root, documentId);
 }
 
-export async function renderReading(root: HTMLElement, markdown: string) {
+export async function renderReading(root: HTMLElement, markdown: string, documentId: string) {
   const html = await Vditor.md2html(markdown, {
     mode: 'light',
     cdn: EDITOR_ASSETS,
@@ -190,8 +201,8 @@ export async function renderReading(root: HTMLElement, markdown: string) {
   Vditor.highlightRender(HIGHLIGHT_OPTIONS, root, EDITOR_ASSETS);
   Vditor.mathRender(root, { cdn: EDITOR_ASSETS, math: { engine: 'KaTeX', inlineDigit: true } });
   root.querySelectorAll<HTMLElement>('.language-mermaid').forEach((element) => {
-    element.classList.add('note-diagram');
-    void renderDiagram(element, element.textContent || '');
+    element.replaceWith(createDiagramPreview(element.textContent || '', false));
   });
+  decorateFolds(root, documentId);
   root.querySelectorAll<HTMLInputElement>('input').forEach((input) => { input.disabled = true; });
 }
