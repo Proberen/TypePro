@@ -1,6 +1,6 @@
 [package]
 name = "local-notebook"
-version = "1.3.0"
+version = "1.3.1"
 description = "TypePro local Markdown notebook"
 authors = ["Local Notebook"]
 edition = "2021"
@@ -33,6 +33,9 @@ sha1 = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
+
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

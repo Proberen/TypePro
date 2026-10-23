@@ -5,6 +5,13 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.3.1",
+    changes: [
+      "修复 Android 同步图片或封面时出现 Permission denied (os error 13) 的问题。",
+      "保留同步附件的原子写入与同名不同内容拒绝覆盖保护。",
+    ],
+  },
+  {
     version: "1.3.0",
     changes: [
       "新增可选 GitHub 同步，首次设备授权后使用专用私有笔记仓库。",

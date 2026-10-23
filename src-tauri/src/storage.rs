@@ -244,6 +244,34 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     result
 }
+#[cfg(not(target_os = "android"))]
+fn publish_new_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    fs::hard_link(source, target)
+}
+#[cfg(target_os = "android")]
+fn publish_new_file(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let source = CString::new(source.as_os_str().as_bytes())?;
+    let target = CString::new(target.as_os_str().as_bytes())?;
+    // Android denies hard links in the app sandbox. Use the kernel operation so
+    // API 26 devices do not depend on a newer Bionic renameat2 symbol.
+    // SAFETY: both paths remain valid NUL-terminated strings for the syscall.
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            target.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
 fn read_limited(path: &Path, max: usize) -> Result<Vec<u8>> {
     let mut file = File::open(path).map_err(err)?;
     if file.metadata().map_err(err)?.len() > max as u64 {
@@ -871,9 +899,14 @@ impl Storage {
             let parent = target.parent().ok_or("无效的同步附件目录")?;
             let temporary = parent.join(format!(".typepro-sync-{}.tmp", id()));
             atomic_write(&temporary, bytes)?;
-            // Hard-link publication is atomic and create-only: even a file appearing after
+            // Publication is atomic and create-only: even a file appearing after
             // preflight is never replaced. Retry will validate that newly existing file.
-            let published = fs::hard_link(&temporary, &target).map_err(err);
+            let published = publish_new_file(&temporary, &target).map_err(|error| {
+                format!(
+                    "无法写入同步附件 {}：{error}",
+                    target.file_name().unwrap_or_default().to_string_lossy()
+                )
+            });
             let _ = fs::remove_file(&temporary);
             published?;
             #[cfg(unix)]
@@ -1163,6 +1196,20 @@ mod tests {
             }],
             plugins: vec![],
         }
+    }
+    #[test]
+    fn publication_preserves_a_target_created_after_preflight() {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join("staged");
+        let target = dir.path().join("target");
+        fs::write(&staged, b"incoming").unwrap();
+        fs::write(&target, b"keep existing").unwrap();
+        assert_eq!(
+            publish_new_file(&staged, &target).unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"keep existing");
+        assert_eq!(fs::read(&staged).unwrap(), b"incoming");
     }
     #[test]
     #[cfg(not(mobile))]

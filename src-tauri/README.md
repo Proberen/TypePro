@@ -1,6 +1,6 @@
 # TypePro native application
 
-The Tauri window uses the operating system WebView. The native layer owns Markdown files, the index, attachments, portable ZIP import/export, and Android document-provider writes. It does not require a login or storage-wide Android permissions.
+The Tauri window uses the operating system WebView. The native layer owns Markdown files, the index, attachments, portable ZIP import/export, and Android document-provider writes. Local use does not require a login or storage-wide Android permissions. Optional GitHub sync requires device authorization; see `../docs/GITHUB.md`.
 
 ## Storage
 

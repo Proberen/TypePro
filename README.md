@@ -1,4 +1,4 @@
-# TypePro 1.3.0
+# TypePro 1.3.1
 
 本地 Markdown 笔记软件。Apple Silicon Mac 与 Android 共用编辑器和插件 API，使用系统 WebView，不捆绑 Chromium。
 

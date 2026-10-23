@@ -1,6 +1,6 @@
 # 构建记录
 
-TypePro 1.3.0（Android versionCode `1003000`）。本次本地构建沿用用户对本任务的 DMG／APK 与必要依赖安装授权。旧版本检查保留为历史记录，本次检查在文末单列。
+TypePro 1.3.1（Android versionCode `1003001`）。本次本地构建沿用用户对本任务的 DMG／APK 与必要依赖安装授权。旧版本检查保留为历史记录，本次检查在文末单列。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -23,12 +23,12 @@ npm ci
 CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 bash scripts/package-dmg.sh \
   src-tauri/target/release/bundle/macos/TypePro.app \
-  ../../outputs/TypePro-1.3.0-mac-arm64.dmg
+  ../../outputs/TypePro-1.3.1-mac-arm64.dmg
 ```
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.3.0-mac-arm64.dmg`。
+应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.3.1-mac-arm64.dmg`。
 
 ## Android
 
@@ -50,7 +50,7 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.3.0 的 Android versionCode 明确配置为 `1003000`，高于 1.2.2 的 `1002002`；CLI 构建时重新生成 `tauri.properties`。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.3.1 的 Android versionCode 明确配置为 `1003001`，高于 1.3.0 的 `1003000`；CLI 构建时重新生成 `tauri.properties`。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
@@ -64,7 +64,7 @@ APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app
 
 ```sh
 codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
-hdiutil verify TypePro-1.3.0-mac-arm64.dmg
+hdiutil verify TypePro-1.3.1-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```
@@ -161,3 +161,21 @@ hdiutil verify TypePro-1.3.0-mac-arm64.dmg
 | --- | ---: | --- |
 | TypePro-1.3.0-mac-arm64.dmg | 13,335,767 | `7b2ec98e3d54d88513e0f7969cd464f35a2784ac68ac7f400699a5bff5fd1d8e` |
 | TypePro-1.3.0-android.apk | 33,583,733 | `419f8ddda1a03011ecb4b07d608962af4c38cb195d2ac2170c75d98eb74624ab` |
+
+
+## 1.3.1 Android 同步权限错误修复（2026-10-22）
+
+- 根因：同步附件在 `Storage::import_sync_assets` 中通过 `fs::hard_link` 发布。专用 NotebookTest／Android 16 的真实应用 UID 10213、`u:r:untrusted_app` SELinux 域下，1.3.0 的原始 Rust 存储模块稳定返回 `Permission denied (os error 13)`；独立 `Os.link` 也返回 EACCES／errno 13。普通启动验收无法覆盖这个附件写入路径。
+- 修复：仅 Android 改为 `renameat2(RENAME_NOREPLACE)` 系统调用，在同一目录原子发布完整暂存文件；桌面保留硬链接。保留批次预检、不同内容不覆盖、竞态目标不覆盖、失败清理与不推进基线的契约；未新增 Android 存储权限，未改笔记格式、同步接口或凭据处理。
+- Android 回归：签名一致的临时 Instrumentation 在 TypePro 专用模拟器进程内加载包含本次真实 `storage.rs` 的原生库，在新建临时测试目录内执行。新增附件、重复导入相同字节、拒绝同名不同内容、正文／封面保存读取、同步导出与图片解析、预检后目标出现仍不覆盖全部通过。旧代码同一入口失败、新代码通过，证据为本任务 `work/typepro-131-native-qa/hardlink-before.txt` 与 `storage-after.txt`。测试组件已卸载，临时测试目录已清理，未访问真实手机或真实用户 Mac 数据。
+- 类型与回归：本次前端只有版本记录修改，随生产构建完成类型检查。`cargo test --manifest-path src-tauri/Cargo.toml --lib --offline` 32 项通过，新增预检后目标出现不覆盖的回归；`git diff --check` 通过。Ponytail review 审查本次差异，未发现必要的行为等价简化。
+- 兼容性：两种 ARM 原生库均确认通过 `syscall` 调用，不动态依赖较新 Bionic `renameat2` 符号。[Android 8 官方 seccomp 白名单](https://android.googlesource.com/platform/bionic/+/android-8.0.0_r4/libc/SECCOMP_WHITELIST.TXT)包含该系统调用；这属于源码核对，不代替 Android 8 实机验收。
+- Mac：正式 arm64、1.3.1、`com.localnotes.notebook`，严格 codesign 与 hdiutil 校验通过；ad-hoc 签名，未公证，没有启动生产 Mac 应用。
+- Android：1.3.1／1003001，minSdk 26、targetSdk 36，ARM64＋ARMv7；apksigner 通过，证书与 1.3.0 相同，ZIP 16KB 和 ARM64 ELF LOAD 段对齐通过。没有卸载原应用，直接从 1.3.0 覆盖安装；安装后和冷启动后索引哈希、4 本笔记、4 篇文档、3 个附件、1 个启用插件代码与状态全部保持一致。
+- 冷启动 Status ok／COLD；45.4 秒、9 次采样保持同一 PID，crash buffer 无新增，日志无 fatal／native signal／Rust panic／uncaught／CSP 拒绝。专用 AVD 已正常关闭并保留原 userdata。没有操作安卓原生 UI。
+- 界限：本次为附件存储路径的真实 Android 沙箱回归，没有重新授权 GitHub 或执行跨设备联网同步；未在物理手机和 Android 8 实测。此前 1.3.0 的真实 Mac 授权／空库同步记录保留，不把本次离线附件检查描述为端到端 GitHub 同步验收。
+
+| 安装包 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.3.1-mac-arm64.dmg | 13,336,846 | `447b3629ccbeb6fb1371a5e8bd9529e61be4927355a923918cedd3087029bc0b` |
+| TypePro-1.3.1-android.apk | 33,583,605 | `3441f49a3ef003e6cad015b6ad5e9d27f258d069f3bc67098a2fc220f6d824de` |
