@@ -1,4 +1,5 @@
 import type Vditor from 'vditor';
+import { stripImageResizeDecorations } from './image-dimensions.ts';
 
 type VditorState = Vditor['vditor'];
 
@@ -26,7 +27,22 @@ export function canonicalUndoField(field: HTMLPreElement) {
     }
   }
   clone.querySelectorAll('[data-type="code-block"] > .vditor-ir__preview').forEach(preview => preview.remove());
+  stripImageResizeDecorations(clone);
+  clone.querySelectorAll('img[data-note-asset]').forEach(node => {
+    const image = node as HTMLImageElement;
+    image.setAttribute('src', image.dataset.noteAsset!); image.removeAttribute('data-note-asset');
+  });
+  clone.querySelectorAll('[data-typepro-block-controls],[data-typepro-image-resize]').forEach(preview => preview.remove());
   return clone;
+}
+
+/** Finish pending typing, then record one canonical document operation. */
+export function runIRTransaction(state: VditorState, mutate: () => boolean) {
+  clearTimeout(state.ir?.processTimeoutId);
+  state.undo!.addToUndoStack(state);
+  if (!mutate()) return false;
+  state.undo!.addToUndoStack(state);
+  return true;
 }
 
 /** Reuse Vditor's history engine; only its snapshot and restoration boundary change. */

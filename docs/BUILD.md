@@ -1,6 +1,6 @@
 # 构建记录
 
-TypePro 1.2.1（Android versionCode `1002001`）。本次本地构建沿用用户对本任务的依赖安装与构建授权，Mac 与 Android 顺序执行。1.2.0 的既往检查保留在文末，1.2.1 的检查以新增验收记录为准。
+TypePro 1.2.2（Android versionCode `1002002`）。本次本地构建沿用用户对本任务的依赖安装与构建授权，Mac 与 Android 顺序执行。旧版本检查保留为历史记录，本次检查在文末单列。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -23,12 +23,12 @@ npm ci
 CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 bash scripts/package-dmg.sh \
   src-tauri/target/release/bundle/macos/TypePro.app \
-  ../../outputs/TypePro-1.2.1-mac-arm64.dmg
+  ../../outputs/TypePro-1.2.2-mac-arm64.dmg
 ```
 
 `package-dmg.sh` 使用 `hdiutil` 包装已签名的 `.app`，包括 Applications 快捷入口；随后执行磁盘映像完整性校验。可通过第一个参数指定 `.app`，第二个参数指定输出 DMG。此步骤不依赖 Finder 的窗口装饰脚本。
 
-应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.2.1-mac-arm64.dmg`。
+应用为 arm64 可执行文件，使用 ad-hoc 签名，未经过 Apple 公证。DMG 只是安装容器；打开后将「TypePro」拖入 Applications。本次显式指定输出为 `TypePro-1.2.2-mac-arm64.dmg`。
 
 ## Android
 
@@ -50,7 +50,7 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.2.1 的 Android versionCode 明确配置为 `1002001`，高于 1.2.0 的 `1002000`；CLI 构建时重新生成 `tauri.properties`。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.2.2 的 Android versionCode 明确配置为 `1002002`，高于 1.2.1 的 `1002001`；CLI 构建时重新生成 `tauri.properties`。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
@@ -64,7 +64,7 @@ APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app
 
 ```sh
 codesign --verify --deep --strict src-tauri/target/release/bundle/macos/TypePro.app
-hdiutil verify TypePro-1.2.1-mac-arm64.dmg
+hdiutil verify TypePro-1.2.2-mac-arm64.dmg
 "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose path/to/app.apk
 "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 path/to/app.apk
 ```
@@ -83,7 +83,7 @@ hdiutil verify TypePro-1.2.1-mac-arm64.dmg
 
 原生命令：`get_notebook_location({notebookId})` 返回 `{path, custom}`；`set_notebook_location({notebookId, path})` 使用相同返回值，`path: null` 迁回默认根目录。迁移前界面必须先完成待保存内容；原生命令由既有全局存储互斥锁串行执行。
 
-1.2.0 时已完成的原生存储验证（1.2.1 未修改存储模块，未重复运行）：`cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests --offline` 通过 22 项测试，覆盖旧版格式／ZIP、真实临时目录迁移、附件相对路径、外部改动、跨目录移动、回迁备份、目标冲突、失效目录、保存恢复日志及路径映射提交失败后保留旧目录并重试。另用已有依赖将同一存储模块以 `--cfg mobile` 编译为独立测试程序，通过 14 项测试，包含手机目录命令在访问文件前拒绝调用。此项为手机条件分支验证，不代替 Android APK 安装验收。
+1.2.0 时已完成的原生存储验证（1.2.1 与 1.2.2 未修改存储模块，未重复运行）：`cargo test --manifest-path src-tauri/Cargo.toml --lib storage::tests --offline` 通过 22 项测试，覆盖旧版格式／ZIP、真实临时目录迁移、附件相对路径、外部改动、跨目录移动、回迁备份、目标冲突、失效目录、保存恢复日志及路径映射提交失败后保留旧目录并重试。另用已有依赖将同一存储模块以 `--cfg mobile` 编译为独立测试程序，通过 14 项测试，包含手机目录命令在访问文件前拒绝调用。此项为手机条件分支验证，不代替 Android APK 安装验收。
 
 ## 1.2.0 安装包验收记录
 
@@ -121,3 +121,25 @@ hdiutil verify TypePro-1.2.1-mac-arm64.dmg
 | --- | ---: | --- |
 | TypePro-1.2.1-mac-arm64.dmg | 12,528,979 | `56d557eef348ebdb83b9c1002bc6e36b0e4f5c55c29be878d87bf481afcb4147` |
 | TypePro-1.2.1-android.apk | 30,475,977 | `01ea56f30db88453c7b39fb6ed21c9bf21e7a93d76990a6e4518a56ad4a1663f` |
+
+## 1.2.2 前端验收记录
+
+- `npx tsc -b --pretty false`、`git diff --check` 通过。37 项针对性测试通过：块定位、标题仅移动自身、真实节点身份、任务／嵌套列表结构、跨容器排序、末块删除补正文、独立代码历史、原生单步撤销、图片四角比例／宽度约束、相对附件路径和 HTML 多图尺寸往返；同时运行相关 Markdown 与 CodeMirror 回归。
+- 实际浏览器桌面 1280×720、手机视口 390×844；Browser 插件未提供，沿用内置 CUA 的 IAB 操作，未另开外部浏览器。页面标识与正文正常，无框架错误覆盖层，相关控制台 warn/error 为空。
+- 实际交互：代码区 computed cursor 为 text、行号为 default；输入代码后上移／拖动、删除和单步撤销，恢复后独立代码撤销仍有效；折叠代码删除撤销保持折叠。表格、引用、公式、流程图、标题分别删除并单步恢复。列表项拖出原列表后保持合法列表结构与原内容，没有根级裸 LI，撤销恢复原位置。
+- 图片实际拖动两次等比缩放至 711、481 CSS px；单步撤销／重做、阅读、离开重进文档均保留尺寸。独立 HTML 图片再次进入时仅显示图片，无源码行或灰底。手机视口响应式显示为正文宽度 307px，保留源 width=481；页面无横向溢出，把手不盖住行首。
+- 阅读时隐藏块操作和缩放控件。截图在交付目录 screenshots/TypePro-1.2.2。图片 canonical 相对附件引用通过真实 Lute 往返与历史测试；浏览器临时附件仅存内存，不能用刷新后显示结果代替原生磁盘附件验收。
+- Ponytail 按当前任务基线仅审查本次差异，没有新增依赖或另造撤销引擎；未发现需要进行的行为等价简化。
+- 本次未改格式化引擎或原生存储，未重跑旧版完整格式化／目录迁移测试。真实触屏长按拖动、物理手机和完整中文输入法候选未实测；手机视口检查不等于 Android 原生 UI 验收。
+
+## 1.2.2 安装包验收记录
+
+- Mac：正常生产配置顺序构建，arm64、版本 1.2.2、标识 `com.localnotes.notebook`；严格 codesign 与 hdiutil 校验通过。未启动生产 Mac 应用，未访问真实笔记。
+- Android：随后构建，版本 1.2.2／1002002、minSdk 26、targetSdk 36，ARM64＋ARMv7；apksigner 通过，证书与 1.2.1 相同；ZIP 16KB 和 ARM64 ELF LOAD 段 0x4000 对齐通过。
+- 专用 NotebookTest 模拟器沿用原 userdata，1.2.1 覆盖安装 1.2.2 成功；安装后索引、4 本笔记、4 篇文档、3 个附件、1 个启用插件的内容哈希和状态逐项一致。没有卸载、清数据或操作物理设备。
+- MainActivity 冷启动返回 `Status: ok / COLD`；45.6 秒内 9 次采样保持相同 PID，crash buffer 无新增，应用日志无 fatal／native signal／Rust panic／uncaught／CSP 拒绝。启动后再次核对全部数据哈希一致。专用 AVD 已正常关闭，保留 userdata。
+
+| 安装包 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.2.2-mac-arm64.dmg | 12,533,548 | `7b06799c975602422e8a56032a4fc26de5e355c0e326608c39212bfe4bed18d9` |
+| TypePro-1.2.2-android.apk | 30,483,317 | `fa9c70b4f4759b1337167e9135e87f2151d27af876dbfc3c8131ae13669f1335` |

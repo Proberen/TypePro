@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { redo, undo } from '@codemirror/commands';
 import { createCodeEditorState } from './code-editor-state.ts';
-import { installCodeUndoBridge } from './code-editor-undo.ts';
+import { installCodeUndoBridge, runIRTransaction } from './code-editor-undo.ts';
 
 const require = createRequire(import.meta.url);
 // Exercise the installed Vditor history engine itself. Only browser layout,
@@ -67,5 +67,41 @@ test('native document undo/redo and independent code undo/redo can alternate wit
   history.redo(state);
   assert.match(field.html, /<p>正文X<\/p>/);
   assert.match(field.html, /value = 42/);
+  restore();
+});
+
+test('moving and deleting canonical blocks use one native undo step and retain pending body input', () => {
+  const heading = '<h1 data-block="0">标题</h1>';
+  const code = '<div data-type="code-block" data-fold-id="stable"><pre><code>const x = 1;</code></pre></div>';
+  const field = new Field(heading + '<p>正文</p>' + code);
+  const history = new NativeUndo();
+  const state = { currentMode: 'ir', ir: { element: field }, undo: history, toolbar: { elements: {} } };
+  const restore = installCodeUndoBridge(state, () => {});
+  history.addToUndoStack(state);
+  field.html = field.html.replace('正文', '正文新输入');
+  const before = field.html;
+  const moved = '<p>正文新输入</p>' + code + heading;
+  assert.equal(runIRTransaction(state, () => { field.html = moved; return true; }), true);
+  assert.equal(history.ir.undoStack.length, 3);
+  history.undo(state); assert.equal(field.html, before);
+  history.redo(state); assert.equal(field.html, moved);
+  runIRTransaction(state, () => { field.html = field.html.replace(code, ''); return true; });
+  history.undo(state); assert.equal(field.html, moved);
+  history.redo(state); assert.equal(field.html, '<p>正文新输入</p>' + heading);
+  assert.doesNotMatch(history.ir.lastText, /cm-editor|runtime widget/);
+  restore();
+});
+
+test('image resize is one native transaction, preserving canonical attachment references through undo/redo', () => {
+  const original = '<p data-block="0">left<img src="../../assets/a.png" alt="图">right</p>';
+  const resized = '<p data-block="0">left<img src="../../assets/a.png" alt="图" width="240">right</p>';
+  const field = new Field(original, false);
+  const history = new NativeUndo();
+  const state = { currentMode: 'ir', ir: { element: field }, undo: history, toolbar: { elements: {} } };
+  const restore = installCodeUndoBridge(state, () => {});
+  history.addToUndoStack(state);
+  runIRTransaction(state, () => { field.html = resized; return true; });
+  history.undo(state); assert.equal(field.html, original);
+  history.redo(state); assert.equal(field.html, resized);
   restore();
 });

@@ -3,6 +3,8 @@
 .typepro-code-editor .cm-scroller { overflow:auto; font:inherit; line-height:1.8; }
 .typepro-code-editor .cm-content { min-height:48px; padding:13px 0; caret-color:var(--text,#243044); white-space:pre; overflow-wrap:normal; word-break:normal; }
 .typepro-code-editor .cm-line { padding:0 16px; }
+.typepro-code-editor .cm-content,.typepro-code-editor .cm-content * { cursor:text; }
+.typepro-code-editor .cm-gutters,.typepro-code-editor .cm-gutterElement { cursor:default; }
 .typepro-code-editor .cm-gutters { border-right:1px solid var(--border,#e8edf3); background:transparent; color:var(--muted,#97a4b6); user-select:none; }
 .typepro-code-editor .cm-lineNumbers .cm-gutterElement { min-width:34px; padding:0 10px 0 12px; }
 .typepro-code-editor .cm-activeLine,.typepro-code-editor .cm-activeLineGutter { background:transparent; }

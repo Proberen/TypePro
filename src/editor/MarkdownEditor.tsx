@@ -6,13 +6,18 @@ import { applySelectedTextStyle, visibleBlockMarkdown } from './formatting';
 import Vditor from 'vditor';
 import type { EditorMode } from '../lib/types';
 import { SourceBuffer } from './SourceBuffer';
-import { installCodeUndoBridge } from './code-editor-undo';
-import { codeBlockText, createAssetRenderer, disposeEditorCodeBlocks, EDITOR_ASSETS, enhanceEditor, formatEditorCodeBlock, MARKDOWN_OPTIONS, renderReading, selectedCodeEditor, snapshotMarkdown, toggleCodeFold, refreshEditorDiagrams } from './rendering';
+import { installCodeUndoBridge, runIRTransaction } from './code-editor-undo';
+import { applyBlockOperation } from './block-actions';
+import { installBlockControls, type BlockOperation } from './block-controls';
+import { installImageResizeControls } from './image-resize';
+import { decorateResizableImages, persistImageWidth } from './image-dimensions';
+import { codeBlockText, createAssetRenderer, disposeEditorCodeBlocks, EDITOR_ASSETS, enhanceEditor, formatEditorCodeBlock, MARKDOWN_OPTIONS, renderReading, selectedCodeEditor, snapshotMarkdown, toggleCodeFold, refreshEditorDiagrams, retainRemovedCodeBlocks } from './rendering';
 import { EDITOR_COMMANDS, EDITOR_SHORTCUTS, INLINE_MARKERS, matchesEditorShortcut, type EditorCommand } from './commands';
 import { captureRichSelection, restoreRichSelection, type RichSelection } from './selection';
 import SlashMenu from './SlashMenu';
 import 'vditor/dist/index.css';
 import './editor.css';
+import './image-resize.css';
 
 export interface EditorHeading { id: string; text: string; level: number }
 export interface EditorHandle {
@@ -54,6 +59,8 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   const composing = useRef(false);
   const codeCollectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const codeHistoryDirty = useRef(false);
+  const blockControls = useRef<ReturnType<typeof installBlockControls> | null>(null);
+  const imageControls = useRef<ReturnType<typeof installImageResizeControls> | null>(null);
   const savedSelection = useRef<RichSelection | null>(null);
   const headingsRef = useRef<EditorHeading[]>([]);
   const [value, setValue] = useState(props.markdown);
@@ -93,6 +100,33 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     if (!codeHistoryDirty.current || !editor) return;
     codeHistoryDirty.current = false;
     editor.vditor.undo?.addToUndoStack(editor.vditor);
+  }
+  function documentTransaction(mutate: (field: HTMLElement) => HTMLElement | null) {
+    const editor = editorRef.current;
+    if (!editor || propsRef.current.mode !== 'edit' || composing.current) return;
+    codeHistoryDirty.current = false;
+    runIRTransaction(editor.vditor, () => {
+      const field = editor.vditor.ir!.element;
+      const focus = mutate(field);
+      if (!focus) return false;
+      // Keep document undo distinct from the independently selected code editor.
+      const caret = field.ownerDocument.createRange();
+      caret.setStartBefore(focus); caret.collapse(true);
+      const selection = field.ownerDocument.defaultView!.getSelection()!;
+      selection.removeAllRanges(); selection.addRange(caret);
+      field.focus({ preventScroll: true });
+      decorateResizableImages(field);
+      enhanceEditor(mountRef.current!, propsRef.current.documentId);
+      savedSelection.current = captureRichSelection(field);
+      collect(); blockControls.current?.refresh(); imageControls.current?.refresh();
+      return true;
+    });
+  }
+  function operateBlock(operation: BlockOperation) {
+    documentTransaction(field => {
+      if (operation.type === 'delete' && field.contains(operation.block)) retainRemovedCodeBlocks(mountRef.current!, operation.block);
+      return applyBlockOperation(field, operation);
+    });
   }
   function replaceSource(next: string) {
     buffer.current.replace(next);
@@ -316,17 +350,18 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     let restoreUndo: (() => void) | undefined;
     const assets = createAssetRenderer(path => propsRef.current.resolveAsset(path));
     const enhance = () => { if (!disposed && !composing.current) {
-      assets(root); enhanceEditor(mount, propsRef.current.documentId, {
+      decorateResizableImages(mount); assets(root); enhanceEditor(mount, propsRef.current.documentId, {
         onChange: () => { codeHistoryDirty.current = true; clearTimeout(codeCollectTimer.current); codeCollectTimer.current = setTimeout(() => { if (!disposed) collect(); }, 180); },
         onError: message => propsRef.current.onError?.(message),
       });
+      blockControls.current?.refresh(); imageControls.current?.refresh();
     } };
     const observer = new MutationObserver(records => {
       // CodeMirror paints its own DOM and updates only its canonical raw code.
       // Neither mutation needs the document-wide decoration pass while typing.
       if (records.every(record => {
         const element = record.target instanceof Element ? record.target : record.target.parentElement;
-        return element?.closest('.note-code-editable .note-code-preview,.note-code-editable > pre.vditor-ir__marker--pre');
+        return element?.closest('.note-code-editable .note-code-preview,.note-code-editable > pre.vditor-ir__marker--pre,[data-typepro-block-controls],[data-typepro-image-resize]');
       })) return;
       cancelAnimationFrame(frame); frame = requestAnimationFrame(enhance);
     });
@@ -349,11 +384,21 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
         editorRef.current = instance;
         restoreUndo = installCodeUndoBridge(instance.vditor, () => {
           if (disposed) return;
-          enhanceEditor(mount, propsRef.current.documentId, undefined, true); collect();
+          decorateResizableImages(mount); assets(root);
+          enhanceEditor(mount, propsRef.current.documentId, undefined, true);
+          blockControls.current?.refresh(); imageControls.current?.refresh(); collect();
         });
         instance.setValue(buffer.current.value); buffer.current.baseline(snapshotMarkdown(instance));
         const field = instance.vditor.ir!.element;
         field.setAttribute('role', 'textbox'); field.setAttribute('aria-label', 'Markdown 正文'); field.setAttribute('aria-multiline', 'true'); field.setAttribute('spellcheck', 'false');
+        blockControls.current = installBlockControls({ host: root, field, isEnabled: () => propsRef.current.mode === 'edit', onOperation: operateBlock });
+        imageControls.current = installImageResizeControls({ host: root, field, isEnabled: () => propsRef.current.mode === 'edit', onResize: ({ image, width }) => {
+          documentTransaction(current => {
+            if (!current.contains(image)) return null;
+            const block = image.closest<HTMLElement>('[data-block],li');
+            return block && persistImageWidth(image, width) ? block : null;
+          });
+        } });
         setReady(true); getHeadings(); enhance();
       },
     });
@@ -374,6 +419,8 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       clearTimeout(codeCollectTimer.current);
       disposed = true; alive.current = false; clearTimeout(timeout); cancelAnimationFrame(frame); observer.disconnect(); themeObserver.disconnect();
       document.removeEventListener('selectionchange', selectionChange); root.removeEventListener('beforeinput', beforeInput); root.removeEventListener('change', languageChange, true); root.removeEventListener('input', codeControlInput, true);
+      blockControls.current?.destroy(); blockControls.current = null;
+      imageControls.current?.destroy(); imageControls.current = null;
       disposeEditorCodeBlocks(mount);
       restoreUndo?.();
       if (editorRef.current === instance) { clearTimeout(instance.vditor.ir?.processTimeoutId); clearTimeout(instance.vditor.ir?.hlToolbarTimeoutId); instance.destroy(); editorRef.current = null; }
@@ -387,6 +434,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   }, [props.markdown]);
   useEffect(() => {
     setSlash(null); setLinkDialog(null); setTableOpen(false); setFlow(null);
+    blockControls.current?.refresh(); imageControls.current?.refresh();
   }, [props.mode]);
   useEffect(() => {
     if (props.mode !== 'read' || !readingRef.current) return;
@@ -408,11 +456,14 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     onCompositionEndCapture={event => { if ((event.target as HTMLElement).closest('.cm-editor')) return; composing.current = false; requestAnimationFrame(() => { if (alive.current && propsRef.current.mode === 'edit') collect(); }); }}
     onKeyDownCapture={event => {
       if (event.nativeEvent.isComposing || composing.current || (event.target as HTMLElement).closest('.editor-slash-menu,.editor-link-dialog,.editor-tools,.cm-editor,[role=dialog]')) return;
-      const isEditor = mountRef.current?.contains(event.target as Node);
+      const target = event.target as HTMLElement;
+      const control = target.closest('[data-typepro-block-controls],[data-typepro-image-resize]');
+      const isEditor = mountRef.current?.contains(target) || control;
       if (!isEditor || propsRef.current.mode === 'read') return;
       if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) {
         event.preventDefault(); event.stopPropagation(); executeCommand(event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo'); return;
       }
+      if (control) return;
       if (['Backspace', 'Delete', 'Enter', 'Tab'].includes(event.key)) commitCodeHistory();
       const shortcut = EDITOR_SHORTCUTS.find(item => matchesEditorShortcut(event.nativeEvent, item.binding));
       if (shortcut) { event.preventDefault(); event.stopPropagation(); executeCommand(shortcut.id); }

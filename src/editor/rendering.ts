@@ -4,6 +4,7 @@ import { decorateInlineStyles } from './formatting';
 import { loadFolds, reconcileFolds, saveFolds, type FoldEntry } from './folding';
 import { mountCodeEditor, type CodeEditorHandle } from './CodeMirrorEditor';
 import { safeCodeFence } from './code-editor-state';
+import { stripImageResizeDecorations } from './image-dimensions';
 
 export const EDITOR_ASSETS = '/vendor/vditor';
 export const MARKDOWN_OPTIONS = {
@@ -134,9 +135,10 @@ export function refreshEditorDiagrams(root: HTMLElement) {
 
 /** Serialize a clone so resolved image URLs can never escape into stored Markdown. */
 export function snapshotMarkdown(editor: Vditor) {
-  if (!editor.vditor.ir!.element.querySelector('img[data-note-asset],.note-inline-style,.note-code-preview')) return editor.getValue();
+  if (!editor.vditor.ir!.element.querySelector('img[data-note-asset],.note-inline-style,.note-code-preview,.note-image-preview')) return editor.getValue();
   const clone = editor.vditor.ir!.element.cloneNode(true) as HTMLElement;
   clone.querySelectorAll('.note-code-preview').forEach(preview => preview.remove());
+  stripImageResizeDecorations(clone);
   clone.querySelectorAll<HTMLImageElement>('img[data-note-asset]').forEach((image) => {
     image.setAttribute('src', image.dataset.noteAsset!);
     image.removeAttribute('data-note-asset');
@@ -176,10 +178,27 @@ interface CodeWidget {
 interface CodeSession {
   documentId: string;
   widgets: Map<HTMLElement, CodeWidget>;
+  removed: CodeWidget[][];
   onChange?: () => void;
   onError?: (message: string) => void;
 }
 const codeSessions = new WeakMap<HTMLElement, CodeSession>();
+
+/** Retain deleted editors for the same 50-operation window as native document undo. */
+export function retainRemovedCodeBlocks(root: HTMLElement, block: HTMLElement) {
+  const session = codeSessions.get(root);
+  if (!session) return;
+  session.removed.push([...session.widgets.values()].filter(widget => block.contains(widget.block)));
+  if (session.removed.length > 50) {
+    const expired = session.removed.shift()!;
+    const retained = new Set(session.removed.flat());
+    expired.forEach(widget => {
+      if (!root.contains(widget.block) && !retained.has(widget)) {
+        widget.editor.destroy(); session.widgets.delete(widget.block);
+      }
+    });
+  }
+}
 
 export function disposeEditorCodeBlocks(root: HTMLElement) {
   const session = codeSessions.get(root);
@@ -259,8 +278,18 @@ function createCodeWidget(root: HTMLElement, session: CodeSession, block: HTMLEl
 export function enhanceEditor(root: HTMLElement, documentId: string, callbacks?: { onChange?: () => void; onError?: (message: string) => void }, preserveCodeEdits = false) {
   let session = codeSessions.get(root);
   if (session && session.documentId !== documentId) { disposeEditorCodeBlocks(root); session = undefined; }
-  if (!session) { session = { documentId, widgets: new Map() }; codeSessions.set(root, session); }
+  if (!session) { session = { documentId, widgets: new Map(), removed: [] }; codeSessions.set(root, session); }
   if (callbacks) { session.onChange = callbacks.onChange; session.onError = callbacks.onError; }
+  const retained = new Set(session.removed.flat());
+  if (preserveCodeEdits) {
+    const entries = foldEntries(documentId);
+    retained.forEach(widget => {
+      const id = widget.block.dataset.foldId;
+      if (id && !entries.some(entry => entry.id === id) && root.querySelector(`[data-fold-id="${CSS.escape(id)}"]`)) {
+        entries.push({ id, code: widget.editor.getValue(), collapsed: widget.block.classList.contains('note-code-collapsed') });
+      }
+    });
+  }
   if (preserveCodeEdits) decorateFolds(root, documentId);
   session.widgets.forEach((widget, block) => {
     if (!root.contains(block) || !block.contains(widget.preview) || !widget.preview.querySelector('.cm-editor')) {
@@ -275,7 +304,7 @@ export function enhanceEditor(root: HTMLElement, documentId: string, callbacks?:
         syncCodeSource(replacement, code, widget.editor.getValue());
         return;
       }
-      widget.editor.destroy(); session!.widgets.delete(block);
+      if (!retained.has(widget)) { widget.editor.destroy(); session!.widgets.delete(block); }
     }
   });
   decorateInlineStyles(root);

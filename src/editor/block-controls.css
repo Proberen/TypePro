@@ -1,0 +1,23 @@
+.note-block-controls { position:fixed; inset:0; z-index:44; pointer-events:none; color:var(--body-text,#3c4758); font:12px/1.4 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; }
+.note-block-controls [hidden] { display:none!important; }
+.note-block-controls .note-block-handle { position:fixed; pointer-events:auto; display:grid; place-items:center; width:28px; height:28px; padding:0; border:0; border-radius:5px; color:var(--muted,#8792a3); background:transparent; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.note-block-controls .note-block-handle:hover,.note-block-controls .note-block-handle:focus-visible,.note-block-controls .note-block-handle[aria-expanded='true'] { color:var(--accent-text,#286496); background:var(--accent-wash,#edf5fd); }
+.note-block-controls .note-block-handle:focus-visible { outline:2px solid var(--accent-ring,#bdd9f3); outline-offset:1px; }
+.note-block-controls.is-dragging .note-block-handle { cursor:grabbing; color:var(--accent-text,#286496); background:var(--accent-wash,#edf5fd); }
+.note-block-controls .note-block-menu { position:fixed; pointer-events:auto; width:158px; padding:5px; border:1px solid var(--editor-border,#e8edf3); border-radius:8px; background:var(--panel,#fff); box-shadow:0 6px 22px #24304418; }
+.note-block-controls .note-block-menu button { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; min-height:34px; padding:7px 10px; color:inherit; border:0; border-radius:4px; background:transparent; font:inherit; text-align:left; cursor:pointer; }
+.note-block-controls .note-block-menu button:hover,.note-block-controls .note-block-menu button:focus-visible { outline:0; background:var(--accent-wash,#edf5fd); color:var(--accent-text,#286496); }
+.note-block-controls .note-block-menu button:disabled { opacity:.36; cursor:default; background:transparent; color:inherit; }
+.note-block-controls .note-block-menu .note-block-delete { color:var(--danger,#c44b52); }
+.note-block-controls .note-block-menu kbd { color:var(--muted,#8792a3); font:11px -apple-system,BlinkMacSystemFont,sans-serif; }
+.note-block-controls .note-block-insert-line { position:fixed; height:2px; border-radius:2px; background:var(--accent,#74ade5); box-shadow:0 0 0 1px var(--accent-wash,#edf5fd); }
+.note-block-controls .note-block-insert-line::before { content:''; position:absolute; left:-3px; top:-2px; width:6px; height:6px; border-radius:50%; background:var(--accent,#74ade5); }
+.note-block-controls .note-block-drag-label { position:fixed; padding:7px 11px; border:1px solid var(--accent-ring,#bdd9f3); border-radius:6px; background:var(--panel,#fff); color:var(--accent-text,#286496); box-shadow:0 3px 12px #24304412; white-space:nowrap; }
+.note-block-controls .note-block-live { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+@media (pointer:coarse) {
+  .note-block-controls .note-block-handle { width:36px; height:36px; }
+  .note-block-controls .note-block-menu button { min-height:44px; padding:10px; }
+}
+@media (max-width:700px) {
+  .markdown-editor.mode-edit .vditor-ir pre.vditor-reset { padding-left:44px!important; }
+}
