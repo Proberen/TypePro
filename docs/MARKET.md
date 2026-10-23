@@ -1,5 +1,9 @@
 # 插件市场
 
+## 1.7.0 宿主与 AI 1.2.0
+
+本次沿用 API 3 与 `catalog-v3.json`，不改变同步清单格式。AI 插件优先使用 `editor.sidebar`，旧 API 3 宿主仅在未知槽位错误时回退独立页面，避免插件通过同步恢复后无法启用；新宿主只显示侧栏。发布仍使用新的不可变版本，不覆盖 AI 1.1.1 或旧目录条目。实际构建与远程发布状态以 [构建记录](BUILD.md) 为准。
+
 市场使用独立公开仓库 [Proberen/typepro-plugins](https://github.com/Proberen/typepro-plugins)。API 3 宿主读取 `main/catalog-v3.json`；旧版客户端继续读取原有的 `catalog.json`（API 1）或 `catalog-v2.json`（API 1／2）。插件包放在各版本不可变的 GitHub Release，浏览下载不使用私有笔记仓库的凭据。
 
 TypePro 1.6.0 DMG／APK 已生成，每日打卡 1.1.0 与 AI 助手初版 1.1.0 已通过 [Publish plugins #7](https://github.com/Proberen/typepro-plugins/actions/runs/39759657722) 发布；AI 助手 1.1.1 独立样式补丁已通过 [Publish plugins #8](https://github.com/Proberen/typepro-plugins/actions/runs/39761719863) 发布，新包已由原生模块真实下载并通过大小／SHA-256 及包结构校验。App 1.6.0 安装包不变。首次发布的三个市场包真实下载校验通过，旧目录条目保持不变。插件源码由独立仓库维护。此次 App 升级提供通用能力，之后已有接口范围内的插件业务和界面可以独立发布。源码上传、工作流发布与实际下载检查均有独立证据，见 [构建记录](BUILD.md)；本轮未验收真实设备中的安装启用与模型调用。完整接口和权限以 [插件规范](PLUGIN-SPEC.md) 为准。

@@ -116,7 +116,6 @@
         const script = document.createElement('script'); if (scriptNonce) script.nonce = scriptNonce; script.src = blob(data.code, 'text/javascript'); script.onload = () => send({ kind: 'ready' }); script.onerror = () => report(new Error('插件界面加载失败')); document.body.append(script);
         addEventListener('unhandledrejection', event => report(event.reason));
         addEventListener('error', event => report(event.error || event.message));
-        document.addEventListener('visibilitychange', () => { void sdk.receive({ kind: 'event', name: 'view.visibility', payload: { visible: !document.hidden } }); });
       } else {
         const source = `'use strict';\nconst report=error=>self.postMessage({kind:'error',message:String(error?.message??error).slice(0,500)});\nconst sdk=(${createSDK.toString()})(self.postMessage.bind(self),${JSON.stringify(data.context)},report);\nObject.defineProperty(self,'notebook',{value:sdk.api});\nfor(const name of ['fetch','XMLHttpRequest','WebSocket','EventSource','importScripts','Worker','SharedWorker'])try{Object.defineProperty(self,name,{value:undefined,writable:false,configurable:false});}catch{}\nself.addEventListener('message',event=>sdk.receive(event.data));\nself.addEventListener('unhandledrejection',event=>report(event.reason));\n(async()=>{\n${data.code}\n})().then(()=>self.postMessage({kind:'ready'})).catch(report);`;
         try { worker = new Worker(blob(source, 'text/javascript')); worker.onmessage = event => send(event.data); worker.onerror = error => report(error.message || '插件脚本加载失败'); }
@@ -132,6 +131,9 @@
   });
   addEventListener('keydown', event => {
     if (event.defaultPrevented || event.isComposing || disposed || !sdk) return;
+    if (event.key === 'Escape' && sdk.api.context.slot === 'editor.sidebar' && !document.querySelector('dialog[open]')) {
+      event.preventDefault(); void sdk.api.ui.close().catch(report); return;
+    }
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     const binding = [(mac ? event.metaKey : event.ctrlKey) ? 'Mod' : '', mac && event.ctrlKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.code].filter(Boolean).join('+');
     const command = shortcuts.find(command => command.binding === binding);

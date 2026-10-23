@@ -1,6 +1,6 @@
 import type { NoteDocument, Workspace } from '../lib/types';
 
-export type PluginSlot = 'home.widget' | 'app.page' | 'plugin.settings';
+export type PluginSlot = 'home.widget' | 'app.page' | 'plugin.settings' | 'editor.sidebar';
 export interface PluginView {
   id: string; pluginId: string; localId: string; slot: PluginSlot;
   title: string; script: string; styles: string[]; height: number; icon?: string;

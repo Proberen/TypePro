@@ -1,5 +1,13 @@
 # TypePro 插件开发
 
+## 1.7.0 编辑页侧栏
+
+`ui.register({id, slot: 'editor.sidebar', title, script, styles, icon})` 在正文右侧提供通用插件侧栏。宿主自动生成编辑工具栏按钮，不需要再注册同用途命令；只有打开笔记后可使用。`ui.open(id)` 幂等展开，视图内 `ui.close()` 收起自身；用户再次点击当前图标也可收起。一个侧栏可见，其他插件位置和权限保持原样。完整时序、可见性和设备记忆以 [通用规范](PLUGIN-SPEC.md) 为准。
+
+此槽位需要 TypePro 1.7.0。AI 助手 1.2.0 在旧 API 3 宿主上仅针对未知槽位错误回退 `app.page`，并恢复旧工具入口；支持侧栏的新版宿主不注册独立会话页。沿用 API 3、现有市场目录和同步格式，不给主程序加入业务插件判断。
+
+以下为此前 1.6.0 交付记录，本轮状态见 [构建记录](BUILD.md)。
+
 TypePro 1.6.0 提供 API 3 通用插件宿主，DMG／APK 已生成；每日打卡 1.1.0 已在独立市场发布，AI 助手 1.1.1 的独立样式补丁已由 [Publish plugins #8](https://github.com/Proberen/typepro-plugins/actions/runs/39761719863) 发布，新包已由原生模块真实下载并通过大小／SHA-256 及包结构校验。App 1.6.0 无需因该补丁重新构建。接口、权限、页面位置、资源限额和生命周期以 [Plugin API 3 规范](PLUGIN-SPEC.md) 为准；市场构建和发布以 [市场维护说明](MARKET.md) 为准。可复用的 SDK 类型在独立插件仓库 `sdk/typepro.d.ts`，业务代码不导入 TypePro App 源码。
 
 ## 职责

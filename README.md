@@ -1,4 +1,10 @@
-# TypePro 1.6.0
+# TypePro 1.7.0
+
+## 1.7.0 笔记侧栏
+
+通用 `editor.sidebar` 在正文右侧并排展开，可收起、调宽，并在当前设备记住选择、开关和宽度；手机采用右侧抽屉。AI 助手 1.2.0 迁入此位置，历史、模型、提示词和 Skill 仍由独立插件提供。旧版 API 3 宿主回退独立页面，新版仅显示侧栏；API 和同步格式保持不变。
+
+本轮已获准构建 DMG／APK 并发布插件，实际交付状态见 [构建记录](docs/BUILD.md)，改造和验收范围见 [侧栏改造记录](docs/PLUGIN-SIDEBAR.md)。此前 1.6.0 的验证记录不代替本次验收。
 
 本地 Markdown 笔记软件。Apple Silicon Mac 与 Android 共用编辑器和插件 API，使用系统 WebView，不捆绑 Chromium。
 

@@ -1,5 +1,27 @@
 # 构建记录
 
+## 1.7.0 笔记侧栏交付（2026-10-22）
+
+已获用户明确允许本轮 DMG／APK 构建、必要检查和 AI 插件发布。App 1.7.0／Android `1007000` 提供通用 `editor.sidebar`；AI 助手 1.2.0 在插件内选择侧栏或旧宿主兼容页面，沿用 API 3 和既有同步格式。改造细节见 [侧栏改造记录](PLUGIN-SIDEBAR.md)。
+
+- Mac 与 Android 生产构建通过，均包含 TypeScript 与前端打包。未安装新依赖。
+- Mac：实际 1.7.0、arm64、`com.localnotes.notebook`，严格 codesign 和 hdiutil 校验通过；ad-hoc 签名、未公证。证据：`work/typepro-sidebar-release-review/mac-package.json`。
+- Android：实际 1.7.0／1007000、包名不变、ARM64＋ARMv7、minSdk26／targetSdk36。个人 release 签名通过且证书与 1.6.0 相同；ZIP 16 KiB 与 ARM64 ELF LOAD `0x4000` 对齐通过。证据：`work/typepro-sidebar-release-review/android-package.json`。
+- AI 初始化兼容检查 8/8 通过：新宿主侧栏不注册旧入口、两个旧槽位错误回退、权限／资源／内部错误原样传播、回退失败不生成无效命令。源码阶段纯 JavaScript SDK 检查 10/10 通过。
+- AI 1.2.0 已由 [Publish plugins #9](https://github.com/Proberen/typepro-plugins/actions/runs/39774454371) 成功发布，源提交 `e95d60f32e8f201c7f8197b30440e7cd2a1957a9`。发布的 10 份源码与本地审阅文件逐字节一致；正式 ZIP 已按公开目录校验大小、SHA-256、CRC、Manifest 和 JS/CSS 资源。未覆盖旧插件版本，未本地运行远程专用插件打包入口。
+- 本轮整合差异已按 Ponytail `ponytail-review` 审查：`Lean already. Ship.`。
+- 当前 App 原生 `Market::catalog`／`Market::download` 实际下载 AI 1.2.0，固定版本、大小、SHA-256 和 ZIP 结构检查通过，下载字节与交付 ZIP 完全相同；v3 其他插件及 v1／v2 插件条目未变。证据：`work/typepro-sidebar-release-review/native-market-ai-120-result.json`、`native-market-ai-120-packages.json`。
+- 页面使用真实 App、PluginHost、PluginSidebar 与正式 AI 1.2.0 ZIP，在独立 `http://127.0.0.1:1467/`、合成笔记数据下完成桌面 1440×900 的 23 项与手机 390×844 的 19 项检查，共 42 项通过。并排／抽屉、调宽与开关刷新记忆、草稿保留、切文档上下文、历史／系统提示词／Skill、Escape 内层优先和停用清理均通过；控制台 warn／error 及 pageerror 为 0。Browser plugin not available，使用 regular Playwright CLI。截图已检查，隔离服务与浏览器已关闭；证据：`work/typepro-sidebar-release-review/ui-qa-summary.json`。
+- 未启动或覆盖生产 Mac App，未使用用户正式笔记、物理手机或付费模型，未执行双设备实际联网同步。浏览器验收不等于打包 App 的原生 WebView 验收。
+
+| 产物 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.7.0-mac-arm64.dmg | 13455114 | `56ab8bc4d086538d1355656b896dd56ffa648b86a120d1e01c2fffcfcc468475` |
+| TypePro-1.7.0-android.apk | 34280777 | `5a12f236d7d55241f52951892e47a384b2af5cc368ebc10dbb46772b9174cf89` |
+| AI 助手 1.2.0 ZIP | 297764 | `9e005bcc64d096df3f575631b742de6df37a6013a0ad4e1759fc966ecbfc145f` |
+
+以下 1.6.0 为历史交付记录。
+
 当前交付为 TypePro 1.6.0（Android versionCode `1006000`）及每日打卡 1.1.0、AI 助手 1.1.1（API 3）。本次已按授权完成 DMG／APK 构建、必要检查与插件远程发布；以下记录来自本版实际证据，历史版本记录不代替本版验收。
 
 ## 1.6.0 通用插件宿主交付记录（2026-10-22）

@@ -21,32 +21,40 @@ function runtime() {
   };
 }
 
-test('view bootstrap and dynamic scripts/styles preserve their CSP nonces', () => {
-  assert.match(html, /<script\b[^>]*src="sandbox\.js"[^>]*nonce="__TAURI_SCRIPT_NONCE__"/);
-  const listeners = new Map(), scripts = [], styles = [], sent = [];
+function viewRuntime(slot = 'editor.sidebar') {
+  const listeners = new Map(), documentListeners = new Map(), scripts = [], styles = [], sent = [];
+  let dialogOpen = false;
   const parent = { postMessage: message => sent.push(message) };
   const document = {
     currentScript: { nonce: 'script-nonce' },
-    querySelector: selector => selector === 'style[nonce]' ? { nonce: 'style-nonce' } : null,
+    querySelector: selector => selector === 'style[nonce]' ? { nonce: 'style-nonce' } : selector === 'dialog[open]' && dialogOpen ? {} : null,
     documentElement: { style: { setProperty() {} }, dataset: {} },
     createElement: tag => ({ tagName: tag }),
     head: { append: element => styles.push({ ...element }) },
     body: { append: element => scripts.push({ ...element }) },
-    addEventListener() {},
+    addEventListener: (name, handler) => documentListeners.set(name, handler),
   };
   const window = {};
   runInNewContext(source, {
-    document, window, parent, Blob,
+    document, window, parent, Blob, navigator: { platform: 'MacIntel' },
     URL: { createObjectURL: () => 'blob:plugin-script', revokeObjectURL() {} },
     addEventListener: (name, handler) => listeners.set(name, handler),
     setTimeout, clearTimeout,
   });
   document.currentScript = null; // Init arrives after the bootstrap script has completed.
-  listeners.get('message')({ source: parent, data: {
-    channel: 'notebook-plugin-v1', kind: 'init', token: 'view-token', role: 'view',
-    code: 'document.body.textContent = "ready";', styles: ['body{color:red}', 'button{border:0}'],
-    context: { pluginId: 'example.generic', theme: { mode: 'light', accent: '#74ade5' } },
-  } });
+  const deliver = data => listeners.get('message')({ source: parent, data: { channel: 'notebook-plugin-v1', token: 'view-token', ...data } });
+  deliver({ kind: 'init', role: 'view', code: 'document.body.textContent = "ready";', styles: ['body{color:red}', 'button{border:0}'],
+    context: { pluginId: 'example.generic', slot, theme: { mode: 'light', accent: '#74ade5' } },
+  });
+  return { listeners, documentListeners, scripts, styles, sent, api: window.notebook, deliver,
+    setDialogOpen: value => { dialogOpen = value; },
+    dispose: () => deliver({ kind: 'dispose' }),
+  };
+}
+
+test('view bootstrap and dynamic scripts/styles preserve their CSP nonces', () => {
+  assert.match(html, /<script\b[^>]*src="sandbox\.js"[^>]*nonce="__TAURI_SCRIPT_NONCE__"/);
+  const { scripts, styles, sent, dispose } = viewRuntime();
   assert.equal(scripts.length, 1);
   assert.equal(scripts[0].src, 'blob:plugin-script');
   assert.equal(scripts[0].nonce, 'script-nonce');
@@ -55,6 +63,44 @@ test('view bootstrap and dynamic scripts/styles preserve their CSP nonces', () =
   ]);
   scripts[0].onload();
   assert.equal(sent.at(-1).kind, 'ready');
+  dispose();
+});
+
+test('visibility comes from the host snapshot, including hidden sidebars', async () => {
+  const view = viewRuntime(), received = [];
+  const subscribed = view.api.events.on('view.visibility', value => received.push(value.visible));
+  const requestId = view.sent.at(-1).requestId;
+  // The host may send the current state before acknowledging the subscription.
+  view.deliver({ kind: 'event', name: 'view.visibility', payload: { visible: false } });
+  view.deliver({ kind: 'response', requestId, result: null });
+  await subscribed;
+  view.deliver({ kind: 'event', name: 'view.visibility', payload: { visible: true } });
+  view.deliver({ kind: 'event', name: 'view.visibility', payload: { visible: false } });
+  await Promise.resolve();
+  assert.deepEqual(received, [false, true, false]);
+  assert.equal(view.documentListeners.has('visibilitychange'), false);
+  view.dispose();
+});
+
+test('Escape closes only an unhandled sidebar without an inner dialog', () => {
+  const view = viewRuntime();
+  const escape = overrides => ({ key: 'Escape', code: 'Escape', preventDefault() {}, ...overrides });
+  for (const event of [escape({ defaultPrevented: true }), escape({ isComposing: true })]) view.listeners.get('keydown')(event);
+  view.setDialogOpen(true); view.listeners.get('keydown')(escape());
+  assert.equal(view.sent.length, 0);
+  view.setDialogOpen(false);
+  let prevented = false;
+  view.listeners.get('keydown')(escape({ preventDefault() { prevented = true; } }));
+  assert.equal(prevented, true);
+  assert.equal(view.sent.at(-1).method, 'ui.close');
+  view.deliver({ kind: 'response', requestId: view.sent.at(-1).requestId, result: null });
+  view.dispose();
+  for (const slot of ['app.page', 'home.widget', 'plugin.settings']) {
+    const other = viewRuntime(slot);
+    other.listeners.get('keydown')(escape());
+    assert.equal(other.sent.length, 0);
+    other.dispose();
+  }
 });
 
 test('RPC preserves structured failure and never returns credentials from configuration', async () => {

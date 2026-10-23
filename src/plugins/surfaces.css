@@ -1,1 +1,39 @@
 .plugin-toolbar-actions{display:flex;gap:4px;max-width:min(32vw,240px);overflow-x:auto;flex-shrink:1}.plugin-toolbar-actions .icon-button{flex-shrink:0}.plugin-page{height:100dvh;display:flex;flex-direction:column;min-width:0;background:var(--bg,#fff)}.plugin-page-heading{height:64px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--border,#e5ebf3);flex-shrink:0}.native-mac .plugin-page-heading{padding-left:88px}.plugin-page-heading h1{font-size:15px;font-weight:600;margin:0}.plugin-page .plugin-surface{flex:1;min-height:0}.plugin-surface-frame{border:0;width:100%;height:100%;display:block}.plugin-widget{margin:0 0 24px;min-width:0}.plugin-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.plugin-review-grid>section{min-width:0}.plugin-review-grid h3{font-size:12px;color:var(--muted);font-weight:500}.plugin-review-grid pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:50dvh;overflow:auto;padding:14px;background:var(--surface,#f7f9fc);border:1px solid var(--border,#e5ebf3);border-radius:8px;font-size:12px}.plugin-trusted-label{font-size:12px;color:var(--muted);margin:0 0 16px}.plugin-dialog-origin{overflow-wrap:anywhere}@media(max-width:700px){.plugin-page-heading{padding:0 16px;height:56px}.plugin-review-grid{grid-template-columns:1fr}.plugin-review-grid pre{max-height:25dvh}.plugin-toolbar-actions{max-width:30vw}}
+
+.workspace.plugin-sidebar-open {
+  --plugin-sidebar-w:min(var(--plugin-sidebar-preferred-w,400px),max(280px,calc(100vw - var(--sidebar-w) - 400px)));
+  grid-template-columns:var(--sidebar-w) minmax(0,1fr) var(--plugin-sidebar-w);
+}
+.workspace.collapsed.plugin-sidebar-open {
+  --plugin-sidebar-w:min(var(--plugin-sidebar-preferred-w,400px),max(280px,calc(100vw - 400px)));
+  grid-template-columns:0 minmax(0,1fr) var(--plugin-sidebar-w);
+}
+.editor-plugin-sidebar { position:relative;min-width:0;min-height:0;height:100%;display:flex;flex-direction:column;background:var(--bg);border-left:1px solid var(--border); }
+.plugin-sidebar-heading { height:64px;flex:none;display:flex;align-items:center;gap:9px;padding:0 14px 0 18px;border-bottom:1px solid var(--border); }
+.plugin-sidebar-heading>svg { color:var(--accent-text); }
+.plugin-sidebar-heading h2 { flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:550; }
+.plugin-sidebar-heading .icon-button { width:30px;height:30px; }
+.plugin-sidebar-views { flex:1;min-height:0;overflow:hidden; }
+.plugin-sidebar-view,.plugin-sidebar-surface { height:100%;min-width:0;min-height:0; }
+.plugin-sidebar-surface { display:flex;flex-direction:column; }
+.plugin-sidebar-surface>.plugin-surface { flex:1;min-height:0; }
+.plugin-sidebar-resize { position:absolute;left:-3px;top:64px;bottom:0;width:7px;z-index:6;cursor:col-resize;touch-action:none; }
+.plugin-sidebar-resize:after { content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:transparent; }
+.plugin-sidebar-resize:hover:after,.plugin-sidebar-resize:focus-visible:after { background:var(--accent); }
+.plugin-sidebar-focus-guard { width:1px;height:1px;position:absolute;overflow:hidden; }
+.plugin-sidebar-scrim { display:none; }
+.plugin-sidebar-open .document-outline { width:min(180px,35%);flex-basis:min(180px,35%); }
+@media(max-width:1100px) {
+  .workspace.plugin-sidebar-open,.workspace.collapsed.plugin-sidebar-open {
+    --plugin-sidebar-w:min(var(--plugin-sidebar-preferred-w,400px),max(280px,calc(100vw - 400px)));
+    grid-template-columns:minmax(0,1fr) var(--plugin-sidebar-w);
+  }
+}
+@media(max-width:700px) {
+  .workspace.plugin-sidebar-open,.workspace.collapsed.plugin-sidebar-open { grid-template-columns:minmax(0,1fr); }
+  .editor-plugin-sidebar { position:fixed;inset:0 0 0 auto;z-index:52;width:min(100%,var(--plugin-sidebar-preferred-w,400px));box-shadow:var(--shadow); }
+  .plugin-sidebar-heading { height:60px;padding-left:16px; }
+  .plugin-sidebar-resize { display:none; }
+  .plugin-sidebar-scrim { display:block;position:fixed;inset:0;background:#14284038;z-index:51; }
+  .plugin-sidebar-open .document-outline { width:min(280px,calc(100% - 40px));flex-basis:auto; }
+}

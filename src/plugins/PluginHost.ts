@@ -9,6 +9,7 @@ export type { PluginHostOptions, PluginCommand, PluginPanel, PluginView } from '
 
 interface Connection {
   frame: HTMLIFrameElement; token: string; viewId?: string;
+  reportedVisibility?: boolean;
   subscriptions: Set<string>; requests: Map<string, AbortController>;
 }
 interface RunningPlugin {
@@ -41,10 +42,12 @@ export class PluginHost {
   private running = new Map<string, RunningPlugin>();
   private failed = new Map<string, string>();
   private disposed = false;
+  private viewVisibility = new Map<string, boolean>();
   private activeDocumentId: string | null | undefined;
   constructor(private options: PluginHostOptions) {
     window.addEventListener('message', this.onMessage);
     window.addEventListener('keydown', this.onKeyDown);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
   setPlugins(plugins: InstalledPlugin[]) {
     if (this.disposed) return;
@@ -87,12 +90,19 @@ export class PluginHost {
     if (!instance) return () => {};
     const view = instance.views.get(id)!;
     const connection = this.connection(id);
+    if (!this.viewVisibility.has(id)) this.viewVisibility.set(id, view.slot !== 'editor.sidebar');
     connection.frame.title = view.title;
     connection.frame.className = 'plugin-surface-frame';
     instance.connections.add(connection);
     connection.frame.onload = () => this.initialize(instance, connection);
     container.append(connection.frame);
     return () => this.detach(instance, connection);
+  }
+  setViewVisibility(viewId: string, visible: boolean) {
+    const instance = [...this.running.values()].find(p => p.views.has(viewId));
+    if (!instance) return;
+    this.viewVisibility.set(viewId, visible);
+    for (const connection of instance.connections) if (connection.viewId === viewId) this.sendVisibility(connection);
   }
   notifyDocumentChange(change?: DocumentChange) {
     if (change) this.emit('document.changed', change);
@@ -112,6 +122,7 @@ export class PluginHost {
   }
   dispose() {
     this.disposed = true; window.removeEventListener('message', this.onMessage); window.removeEventListener('keydown', this.onKeyDown);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     for (const id of this.running.keys()) this.stop(id);
   }
   private emit(name: string, payload: unknown, pluginId?: string) {
@@ -155,6 +166,7 @@ export class PluginHost {
   private stop(id: string) {
     const instance = this.running.get(id); if (!instance) return;
     this.running.delete(id); clearTimeout(instance.timeout);
+    for (const viewId of instance.views.keys()) this.viewVisibility.delete(viewId);
     this.options.cancelDialogs(id);
     for (const connection of [...instance.connections]) this.detach(instance, connection);
     void instance.services.stop();
@@ -169,6 +181,16 @@ export class PluginHost {
   private post(connection: Connection, payload: Record<string, unknown>) {
     connection.frame.contentWindow?.postMessage({ channel: CHANNEL, token: connection.token, ...payload }, '*');
   }
+  private sendVisibility(connection: Connection, force = false) {
+    if (!connection.subscriptions.has('view.visibility')) return;
+    const visible = (!connection.viewId || this.viewVisibility.get(connection.viewId) !== false) && !document.hidden;
+    if (!force && connection.reportedVisibility === visible) return;
+    connection.reportedVisibility = visible;
+    this.post(connection, { kind: 'event', name: 'view.visibility', payload: { visible } });
+  }
+  private onVisibilityChange = () => {
+    for (const instance of this.running.values()) for (const connection of instance.connections) this.sendVisibility(connection);
+  };
   private sendShortcuts(instance: RunningPlugin, connection?: Connection) {
     const bindings = [...instance.commands.values()].filter(command => command.shortcut).map(command => ({ id: command.id.slice(instance.plugin.manifest.id.length + 1), binding: command.shortcut }));
     for (const target of connection ? [connection] : instance.connections) this.post(target, { kind: 'shortcuts', bindings });
@@ -192,6 +214,7 @@ export class PluginHost {
       if (target === current.main) clearTimeout(current.timeout);
       this.post(target, { kind: 'context', context: { theme: this.options.getTheme(), activeDocumentId: this.options.getActiveDocumentId() } });
       this.sendShortcuts(current, target);
+      this.sendVisibility(target);
       return;
     }
     if (data.kind === 'error') { this.fail(current, String(data.message ?? '插件执行失败').slice(0, 500)); return; }
@@ -242,7 +265,9 @@ export class PluginHost {
         if (!EVENTS.has(name)) throw new PluginError('UNSUPPORTED_API', '未知事件');
         if (name.startsWith('document.')) this.require(instance, 'notes.read');
         if (name === 'storage.changed') this.require(instance, 'storage');
-        connection.subscriptions.add(name); this.options.onStateChange(); return null;
+        connection.subscriptions.add(name);
+        if (name === 'view.visibility') this.sendVisibility(connection, true);
+        this.options.onStateChange(); return null;
       }
       case 'events.unsubscribe': connection.subscriptions.delete(String(args.name ?? 'document.active')); this.options.onStateChange(); return null;
       case 'notes.list': this.require(instance, 'notes.read'); return workspace().notebooks.map(n => ({ id: n.id, name: n.name, documents: n.documents.map(({ id, title, updatedAt }) => ({ id, title, updatedAt })) }));
@@ -284,7 +309,7 @@ export class PluginHost {
       case 'ui.register': {
         this.require(instance, 'ui'); const local = localId(args.id), viewId = `${id}:${local}`;
         if (instance.views.size >= 8 && !instance.views.has(viewId)) throw new PluginError('LIMIT_EXCEEDED', '每个插件最多 8 个视图');
-        if (!['home.widget', 'app.page', 'plugin.settings'].includes(String(args.slot))) throw new PluginError('INVALID_ARGUMENT', '未知视图位置');
+        if (!['home.widget', 'app.page', 'plugin.settings', 'editor.sidebar'].includes(String(args.slot))) throw new PluginError('INVALID_ARGUMENT', '未知视图位置');
         const script = text(args.script, '界面脚本', 200), styles = args.styles ?? [];
         if (!script.endsWith('.js') || !Array.isArray(styles) || styles.length > 8 || styles.some(path => typeof path !== 'string' || !path.endsWith('.css') || typeof instance.plugin.files?.[path] !== 'string') || typeof instance.plugin.files?.[script] !== 'string') throw new PluginError('NOT_FOUND', '插件包缺少 JS 或 CSS 界面资源');
         instance.views.set(viewId, { id: viewId, pluginId: id, localId: local, slot: args.slot as PluginView['slot'], title: text(args.title, '标题', 60), script, styles: styles as string[], height: boundedHeight(args.height), ...(typeof args.icon === 'string' ? { icon: text(args.icon, '图标', 40) } : {}) });
