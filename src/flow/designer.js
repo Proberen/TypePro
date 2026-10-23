@@ -1,5 +1,6 @@
 import {parseDrawing, serializeDrawing} from './model.js';
 import {renderFlowPreview, cancelFlowPreview} from './preview';
+import {mountCodeEditor} from '../editor/CodeMirrorEditor';
 
 // The accepted imperative canvas lives inside its own modal; React owns its lifetime.
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -28,7 +29,7 @@ import {renderFlowPreview, cancelFlowPreview} from './preview';
         <div class="flow-draw-layout"><div class="flow-canvas-scroll"><svg class="flow-canvas" id="${diagramId}" viewBox="0 0 1000 660" aria-label="流程图绘制画布"><defs><marker id="${diagramId}-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z"/></marker></defs><g class="flow-edges"></g><g class="flow-nodes"></g></svg></div><aside class="flow-inspector" aria-label="流程图属性"></aside></div>
         <div class="flow-canvas-hint" aria-live="polite">拖动节点调整位置 · 连线后点选起点和终点</div>
       </div>
-      <div class="flow-source-layout" id="${diagramId}-mermaid" role="tabpanel" aria-labelledby="${diagramId}-mermaid-tab" hidden><label class="flow-source-panel"><span>Mermaid</span><textarea spellcheck="false" aria-label="Mermaid 源码"></textarea></label><div class="flow-preview-panel"><span>预览</span><div class="flow-preview" aria-live="polite"></div></div></div>
+      <div class="flow-source-layout" id="${diagramId}-mermaid" role="tabpanel" aria-labelledby="${diagramId}-mermaid-tab" hidden><section class="flow-source-panel" aria-label="Mermaid 源码"><header class="flow-source-heading"><span>Mermaid</span><button type="button" class="flow-format" data-flow="format" title="格式化 · ⌥⇧F">格式化</button></header><div class="flow-code-editor"></div></section><div class="flow-preview-panel"><span>预览</span><div class="flow-preview" aria-live="polite"></div></div></div>
       <div class="flow-message" aria-live="polite" hidden></div>
       <footer class="flow-footer"><span>保存为 Mermaid，支持再次编辑</span><div><button class="flow-cancel" data-flow="close">取消</button><button class="flow-save" data-flow="save">${source!==undefined?'保存修改':'插入流程图'}</button></div></footer>
     </section>`;
@@ -38,14 +39,25 @@ import {renderFlowPreview, cancelFlowPreview} from './preview';
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const query = selector => overlay.querySelector(selector);
-    const textarea = query('textarea'), canvas = query('.flow-canvas'), inspector = query('.flow-inspector'), preview = query('.flow-preview');
-    textarea.value = raw;
+    const sourceHost = query('.flow-code-editor'), canvas = query('.flow-canvas'), inspector = query('.flow-inspector'), preview = query('.flow-preview');
     const setMessage = message => { const element = query('.flow-message'); element.textContent = message; element.hidden = !message; };
+    const sourceEditor = mountCodeEditor(sourceHost, {
+      value: raw, language: 'mermaid', ariaLabel: 'Mermaid 源码',
+      onChange: value => {
+        raw=value; graph=parseDrawing(raw); clearTimeout(timer);
+        if(graph.ok)layout();
+        query('[data-flow="draw"]').setAttribute('aria-disabled',String(!graph.ok));
+        setMessage(graph.ok?'':graph.reason+'。原文已保留，可继续编辑并预览。');
+        timer=setTimeout(()=>renderFlowPreview(preview,raw),220);
+      },
+      onFormatError: setMessage,
+      onFormatStateChange: pending => { const button=query('[data-flow="format"]'); button.disabled=pending; button.textContent=pending?'格式化中…':'格式化'; },
+    });
     const hint = message => { query('.flow-canvas-hint').textContent = message || '拖动节点调整位置 · 连线后点选起点和终点'; };
 
     function close(saved=false) {
       if (destroyed) return;
-      destroyed = true; clearTimeout(timer); cancelFlowPreview(preview); overlay.remove();
+      destroyed = true; clearTimeout(timer); cancelFlowPreview(preview); sourceEditor.destroy(); overlay.remove();
       for (const [element, inert] of background) element.inert = inert;
       document.body.style.overflow = previousOverflow;
       if (previousFocus?.isConnected) previousFocus.focus({preventScroll:true});
@@ -116,7 +128,7 @@ import {renderFlowPreview, cancelFlowPreview} from './preview';
       query('[data-flow="connect"]').setAttribute('aria-pressed',String(connectMode));
     }
 
-    function changed() { raw=serializeDrawing(graph);textarea.value=raw;draw();setMessage(''); }
+    function changed() { raw=serializeDrawing(graph);sourceEditor.setValue(raw);draw();setMessage(''); }
     function select(kind,value) {
       selected=kind==='node'?{kind,id:value}:{kind,index:Number(value)};draw();renderInspector();
       query(kind==='node'?`[data-flow-node="${value}"]`:`[data-flow-edge="${value}"]`)?.focus({preventScroll:true});
@@ -167,6 +179,7 @@ import {renderFlowPreview, cancelFlowPreview} from './preview';
       if(edge) {select('edge',edge.dataset.flowEdge);return;}
       const action=event.target.closest('[data-flow]')?.dataset.flow;
       if(action==='close')close();
+      if(action==='format') { const done=await sourceEditor.format(); if(done&&!destroyed)setMessage(''); }
       if(action==='draw'||action==='mermaid')switchMode(action);
       if(action==='add'){
         if(graph.nodes.length>=60){setMessage('绘制模式最多支持 60 个节点，可切换 Mermaid 继续编辑。');return;}
@@ -187,13 +200,6 @@ import {renderFlowPreview, cancelFlowPreview} from './preview';
     });
     overlay.addEventListener('dblclick',event=>{if(event.target.closest('[data-flow-node]')){query('[data-flow-label]')?.focus();query('[data-flow-label]')?.select();}});
     overlay.addEventListener('input',event=> {
-      if(event.target===textarea) {
-        raw=textarea.value;graph=parseDrawing(raw);clearTimeout(timer);
-        if(graph.ok)layout();
-        query('[data-flow="draw"]').setAttribute('aria-disabled',String(!graph.ok));
-        setMessage(graph.ok?'':graph.reason+'。原文已保留，可继续编辑并预览。');
-        timer=setTimeout(()=>renderFlowPreview(preview,raw),220);return;
-      }
       if(event.target.matches('[data-flow-label]')){const item=selection();if(item){item.label=event.target.value;changed();}}
     });
     overlay.addEventListener('change',event=> {
@@ -226,7 +232,7 @@ import {renderFlowPreview, cancelFlowPreview} from './preview';
     overlay.addEventListener('keydown',event=> {
       event.stopPropagation();
       if(event.key==='Escape'){event.preventDefault();if(connectMode){connectMode=false;connecting=null;draw();hint();}else close();return;}
-      if(event.key==='Tab') {
+      if(event.key==='Tab'&&!event.defaultPrevented) {
         const controls=[...overlay.querySelectorAll('button:not(:disabled),input,select,textarea,[tabindex="0"]')].filter(element=>!element.closest('[hidden]')&&element.getClientRects().length);
         const first=controls[0],last=controls[controls.length-1];
         if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}

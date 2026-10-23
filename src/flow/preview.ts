@@ -1,6 +1,7 @@
 interface MermaidEngine {
   initialize(options: Record<string, unknown>): void;
   render(id: string, source: string): Promise<{ svg: string }>;
+  parse(source: string): Promise<unknown>;
 }
 
 let runtime: Promise<MermaidEngine> | undefined;
@@ -29,6 +30,11 @@ function mermaidRuntime(): Promise<MermaidEngine> {
     });
   }
   return runtime;
+}
+
+export async function validateFlowSource(source: string): Promise<void> {
+  const engine = await mermaidRuntime();
+  await engine.parse(source);
 }
 
 /** Mermaid's strict renderer is followed by a local SVG-only boundary. */

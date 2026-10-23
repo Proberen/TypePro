@@ -1,0 +1,28 @@
+.typepro-code-editor { color:var(--body-text,#3c4758); background:var(--code,#f7f9fc); font:12px/1.8 'SFMono-Regular',Consolas,'Liberation Mono',monospace; text-align:left; }
+.typepro-code-editor.cm-focused { outline:none; }
+.typepro-code-editor .cm-scroller { overflow:auto; font:inherit; line-height:1.8; }
+.typepro-code-editor .cm-content { min-height:48px; padding:13px 0; caret-color:var(--text,#243044); white-space:pre; overflow-wrap:normal; word-break:normal; }
+.typepro-code-editor .cm-line { padding:0 16px; }
+.typepro-code-editor .cm-gutters { border-right:1px solid var(--border,#e8edf3); background:transparent; color:var(--muted,#97a4b6); user-select:none; }
+.typepro-code-editor .cm-lineNumbers .cm-gutterElement { min-width:34px; padding:0 10px 0 12px; }
+.typepro-code-editor .cm-activeLine,.typepro-code-editor .cm-activeLineGutter { background:transparent; }
+.typepro-code-editor .cm-cursor,.typepro-code-editor .cm-dropCursor { border-left-color:var(--text,#243044); }
+.typepro-code-editor .cm-selectionBackground,.typepro-code-editor.cm-focused .cm-selectionBackground { background:var(--accent-ring,#bdd9f3); }
+.typepro-code-editor .cm-content ::selection { background:transparent!important; }
+.typepro-code-editor .cm-matchingBracket { background:var(--accent-ring,#bdd9f3); outline:1px solid var(--accent,#74ade5); }
+.typepro-code-editor .cm-code-keyword { color:#9952b8; }
+.typepro-code-editor .cm-code-string { color:#2d8d80; }
+.typepro-code-editor .cm-code-number { color:#bd7a32; }
+.typepro-code-editor .cm-code-comment { color:#8c99ac; font-style:italic; }
+.typepro-code-editor .cm-code-function { color:#3775bb; }
+.typepro-code-editor .cm-code-type { color:#9258b4; }
+.typepro-code-editor .cm-code-property { color:#397ca5; }
+.typepro-code-editor .cm-code-punctuation { color:#728299; }
+.typepro-code-editor .cm-code-meta { color:#5d8b9d; }
+[data-theme='dark'] .typepro-code-editor .cm-code-keyword,[data-theme='dark'] .typepro-code-editor .cm-code-type { color:#c69cfa; }
+[data-theme='dark'] .typepro-code-editor .cm-code-string { color:#84cdbb; }
+[data-theme='dark'] .typepro-code-editor .cm-code-function { color:#8bb9f7; }
+[data-theme='dark'] .typepro-code-editor .cm-code-number { color:#e5b17c; }
+[data-theme='dark'] .typepro-code-editor .cm-code-comment { color:#8c9ab0; }
+[data-theme='dark'] .typepro-code-editor .cm-code-property { color:#8bbdd9; }
+@media(max-width:700px) { .typepro-code-editor { font-size:11px; } .typepro-code-editor .cm-line { padding:0 12px; } .typepro-code-editor .cm-lineNumbers .cm-gutterElement { min-width:27px; padding:0 8px; } }

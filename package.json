@@ -1,7 +1,7 @@
 {
   "name": "typepro",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
@@ -12,14 +12,39 @@
     "prebuild": "node scripts/copy-editor-assets.mjs"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-css": "6.3.1",
+    "@codemirror/lang-html": "6.4.12",
+    "@codemirror/lang-java": "6.0.2",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/lang-rust": "6.0.2",
+    "@codemirror/lang-sql": "6.10.0",
+    "@codemirror/lang-xml": "6.1.0",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/highlight": "1.2.5",
+    "@scalar/rust-fmt": "0.3.0",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.8.3",
     "@tauri-apps/plugin-fs": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2.7.2",
+    "@wasm-fmt/gofmt": "0.7.3",
+    "@wasm-fmt/ruff_fmt": "0.15.20",
+    "@wasm-fmt/shfmt": "0.2.7",
     "fflate": "^0.8.3",
     "lucide-react": "^1.60.0",
+    "mermaid-formatter": "0.3.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-java": "2.7.7",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "sql-formatter": "15.9.0",
     "vditor": "^4.0.1"
   },
   "devDependencies": {
@@ -30,5 +55,9 @@
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
+  },
+  "overrides": {
+    "lodash": "4.18.1",
+    "lodash-es": "4.18.1"
   }
 }

@@ -1,15 +1,16 @@
-# TypePro 1.2.0
+# TypePro 1.2.1
 
 本地 Markdown 笔记软件。Apple Silicon Mac 与 Android 共用编辑器和插件 API，使用系统 WebView，不捆绑 Chromium。
 
 ## 使用
 
 - 首页选择或搜索笔记，支持六张内置封面及本地图片；笔记内创建文档，通过行末菜单重命名、移动或删除。
-- 文档侧栏支持收起、展开和拖动调宽；正文左上角图标打开嵌套大纲，支持折叠与跳转。
-- 输入 `/` 打开 Markdown 语法菜单，在当前光标处插入；代码块提供语言选择、高亮、行号和复制。
+- 文档侧栏支持收起、展开和拖动调宽；正文左上角图标打开左侧常驻大纲，支持嵌套折叠与标题跳转；手机以抽屉展示。
+- 输入 `/` 打开 Markdown 语法菜单，在当前光标处插入；代码块提供语言选择、实时高亮、行号、缩进、括号补全、撤销重做和复制。
 - 外观支持浅色、深色、跟随系统、自定义主题色（默认浅蓝）和字号；正文随可用空间展开。
 - 顶部眼睛／笔图标切换编辑与阅读，也可使用 `⌘/`。编辑时显示正文工具区；字体、文字颜色作用于选中文字，通过内嵌 HTML 保存在 Markdown 中。
-- 工具区支持标题、文字格式、列表、任务、引用、链接、图片、公式等，表格可指定行列数（含表头）。代码块可独立折叠，重新打开保持状态。流程图支持可视化绘制与 Mermaid 实时预览；复杂 Mermaid 保留源码，可继续在 Mermaid 模式编辑。
+- 工具区支持标题、文字格式、列表、任务、引用、链接、图片、公式等，表格可指定行列数（含表头）。代码块可独立折叠，重新打开保持状态。流程图支持可视化绘制与 Mermaid 实时预览；复杂 Mermaid 保留源码，可继续在 Mermaid 模式编辑。Mermaid 源码共用独立代码编辑器。
+- 代码块头部「格式化」或 `⌥⇧F` 格式化当前块，支持全部现有语言；失败保留原文，成功可撤销。引擎随应用打包，首次使用按语言在后台加载。纯文本仅清除行尾空格。
 - 自动保存到本机。桌面 `⌘S` 立即保存，`⌘N` 在首页新建笔记、在编辑页新建文档；更多 Typora 风格操作见应用内「键盘快捷键」。底部显示保存状态。
 - 从「导入 / 导出」导入 `.md`、`.markdown` 或本应用的 ZIP。导出范围可选全部、当前笔记本或当前文档；跨设备迁移使用 ZIP，可携带图片附件。单独导出 Markdown 不携带附件。
 - 在「关于 TypePro」查看版本号、更新记录及升级说明。
@@ -40,11 +41,11 @@ workspace/
 
 Mac 新建笔记或「存储目录」中可为每本笔记选择独立的空文件夹，支持迁移与回到默认目录。每个目录含 `notebooks/<id>/<doc>.md` 和 `assets/`，保留 Markdown 的相对图片引用。迁移不删除旧文件；绝对路径仅记在本机 `locations.json`，不会写入 ZIP。手机版不提供自定义目录。
 
-TypePro 1.2.0 沿用原「笔记」应用的标识和数据目录。Android 沿用原签名密钥与包名，覆盖安装保留原有笔记。
+TypePro 1.2.1 沿用原「笔记」应用的标识和数据目录。Android 沿用原签名密钥与包名，覆盖安装保留原有笔记。
 
 ## 开发与构建
 
-技术栈：Tauri 2、React、TypeScript、Vditor/Lute。依赖版本由 `package-lock.json` 与 `src-tauri/Cargo.lock` 锁定。构建前需要 Node.js（本次使用的精确版本见 [构建记录](docs/BUILD.md)）、Rust、macOS Xcode 命令行工具；Android 还需要 Java、SDK 与 NDK。
+技术栈：Tauri 2、React、TypeScript、Vditor/Lute 与 CodeMirror 6。依赖版本由 `package-lock.json` 与 `src-tauri/Cargo.lock` 锁定。构建前需要 Node.js（本次使用的精确版本见 [构建记录](docs/BUILD.md)）、Rust、macOS Xcode 命令行工具；Android 还需要 Java、SDK 与 NDK。
 
 ```sh
 npm ci
@@ -66,7 +67,8 @@ Android 签名环境变量和原生存储实现见 [原生说明](src-tauri/READ
 
 ```sh
 npx tsc -b --pretty false
-node --experimental-strip-types --test src/editor/editor.test.mjs src/flow/flow.test.mjs
+node --experimental-strip-types --test src/editor/editor.test.mjs src/editor/code-editor*.test.mjs src/flow/flow.test.mjs
+node --experimental-strip-types --test src/editor/code-format/*.test.mjs
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
@@ -79,6 +81,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib
 | `src/App.tsx`、`src/Sidebar.tsx` | 笔记本、文档与操作界面 |
 | `src/lib/` | 原生桥接、共享模型、串行自动保存 |
 | `src/editor/` | 编辑／阅读、原文保留、本地图片与 Markdown 渲染 |
+| `src/editor/code-format/` | 离线代码格式化、后台 worker 与按需加载引擎 |
 | `src/flow/` | 流程图绘制、Mermaid 解析与本地预览 |
 | `src/plugins/`、`public/plugins/` | 插件安装、权限、沙箱和宿主 API |
 | `src-tauri/src/` | 本地文件、恢复日志、导入导出、平台桥接 |

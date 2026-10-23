@@ -149,6 +149,18 @@
 }
 
 .markdown-editor .editor-surface { display:flex; flex:1; min-height:0; min-width:0; position:relative; }
+.markdown-editor .editor-body-flex { display:flex; flex:1; min-width:0; min-height:0; overflow:hidden; position:relative; }
+.markdown-editor .vditor-ir .note-code-editable > pre { display:none!important; }
+.markdown-editor .vditor-ir .note-code-editable .note-code-content { display:block; overflow:visible; }
+.markdown-editor .vditor-ir .note-code-editable .note-codebox { border-bottom:1px solid var(--editor-border); border-radius:8px; }
+.markdown-editor .vditor-ir .note-code-editable .note-codehead { border-bottom:1px solid var(--editor-border); }
+.markdown-editor .vditor-ir .note-code-editable.note-code-collapsed .note-code-content { display:none!important; }
+.markdown-editor .vditor-ir .note-code-editable.note-code-collapsed .note-codehead { border-bottom:0; }
+.markdown-editor .note-code-editor-host { min-width:0; }
+.markdown-editor .note-code-status { font-size:10px; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.markdown-editor .note-code-status:empty { display:none; }
+.markdown-editor .note-code-status[role='alert'] { color:var(--danger,#c44b52); }
+.markdown-editor .note-codehead button:disabled { opacity:.45; cursor:wait; }
 .markdown-editor .markdown-visual { min-width:0; }
 .markdown-editor .markdown-reading { width:100%; }
 .markdown-editor .note-style-marker { display:none!important; }

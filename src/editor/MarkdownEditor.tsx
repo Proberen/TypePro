@@ -6,7 +6,8 @@ import { applySelectedTextStyle, visibleBlockMarkdown } from './formatting';
 import Vditor from 'vditor';
 import type { EditorMode } from '../lib/types';
 import { SourceBuffer } from './SourceBuffer';
-import { createAssetRenderer, EDITOR_ASSETS, enhanceEditor, MARKDOWN_OPTIONS, renderReading, snapshotMarkdown, toggleCodeFold, refreshEditorDiagrams } from './rendering';
+import { installCodeUndoBridge } from './code-editor-undo';
+import { codeBlockText, createAssetRenderer, disposeEditorCodeBlocks, EDITOR_ASSETS, enhanceEditor, formatEditorCodeBlock, MARKDOWN_OPTIONS, renderReading, selectedCodeEditor, snapshotMarkdown, toggleCodeFold, refreshEditorDiagrams } from './rendering';
 import { EDITOR_COMMANDS, EDITOR_SHORTCUTS, INLINE_MARKERS, matchesEditorShortcut, type EditorCommand } from './commands';
 import { captureRichSelection, restoreRichSelection, type RichSelection } from './selection';
 import SlashMenu from './SlashMenu';
@@ -34,6 +35,7 @@ export interface MarkdownEditorProps {
   saveAsset: (file: File) => Promise<{ path: string; url: string }>;
   resolveAsset: (path: string) => Promise<string>;
   documentTools?: ReactNode;
+  documentOutline?: ReactNode;
 }
 
 const TOOLBAR_COMMANDS: Record<string, string> = { bold: 'bold', italic: 'italic', strike: 'strike', inlinecode: 'inline-code', bullet: 'list', ordered: 'ordered-list', task: 'check', quote: 'quote' };
@@ -50,6 +52,8 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   const buffer = useRef(new SourceBuffer(props.markdown));
   const alive = useRef(true);
   const composing = useRef(false);
+  const codeCollectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const codeHistoryDirty = useRef(false);
   const savedSelection = useRef<RichSelection | null>(null);
   const headingsRef = useRef<EditorHeading[]>([]);
   const [value, setValue] = useState(props.markdown);
@@ -79,9 +83,16 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     getHeadings();
   }
   function collect() {
+    clearTimeout(codeCollectTimer.current);
     const editor = editorRef.current;
     if (!composing.current && editor && buffer.current.accept(snapshotMarkdown(editor))) publish();
     return buffer.current.value;
+  }
+  function commitCodeHistory() {
+    const editor = editorRef.current;
+    if (!codeHistoryDirty.current || !editor) return;
+    codeHistoryDirty.current = false;
+    editor.vditor.undo?.addToUndoStack(editor.vditor);
   }
   function replaceSource(next: string) {
     buffer.current.replace(next);
@@ -94,7 +105,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   }
   function rememberSelection() {
     const field = editorRef.current?.vditor.ir?.element;
-    const activeControl = document.activeElement?.closest('.editor-tools,[role=dialog],.editor-slash-menu');
+    const activeControl = document.activeElement?.closest('.editor-tools,[role=dialog],.editor-slash-menu,.cm-editor');
     if (field && !activeControl) savedSelection.current = captureRichSelection(field) || savedSelection.current;
   }
   function restoreSelection() {
@@ -102,6 +113,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     if (field) restoreRichSelection(field, savedSelection.current);
   }
   function insertText(text: string) {
+    commitCodeHistory();
     rememberSelection();
     if (editorRef.current && propsRef.current.mode === 'edit') {
       restoreSelection();
@@ -189,7 +201,12 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   function executeCommand(id: string) {
     if (id === 'slash') { openSlash(); return; }
     if (propsRef.current.mode === 'read' || composing.current) return;
-    if (id === 'undo' || id === 'redo') { rememberSelection(); restoreSelection(); editorRef.current?.vditor.toolbar?.elements?.[id]?.querySelector<HTMLButtonElement>('button')?.click(); collect(); return; }
+    if (id === 'undo' || id === 'redo') {
+      const code = mountRef.current && selectedCodeEditor(mountRef.current);
+      if (code) { code.focus(); code[id](); collect(); return; }
+      rememberSelection(); restoreSelection(); editorRef.current?.vditor.toolbar?.elements?.[id]?.querySelector<HTMLButtonElement>('button')?.click(); collect(); return;
+    }
+    commitCodeHistory();
     if (id === 'clear-color') { styleSelection(`color:${getComputedStyle(rootRef.current!).getPropertyValue('--body-text').trim() || '#3c4758'}`); return; }
     if (id === 'clear') { clearFormatting(); return; }
     const command = EDITOR_COMMANDS.find(item => item.id === id);
@@ -296,9 +313,23 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     }
     let disposed = false;
     let frame = 0;
+    let restoreUndo: (() => void) | undefined;
     const assets = createAssetRenderer(path => propsRef.current.resolveAsset(path));
-    const enhance = () => { if (!disposed && !composing.current) { assets(root); enhanceEditor(mount, propsRef.current.documentId); } };
-    const observer = new MutationObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(enhance); });
+    const enhance = () => { if (!disposed && !composing.current) {
+      assets(root); enhanceEditor(mount, propsRef.current.documentId, {
+        onChange: () => { codeHistoryDirty.current = true; clearTimeout(codeCollectTimer.current); codeCollectTimer.current = setTimeout(() => { if (!disposed) collect(); }, 180); },
+        onError: message => propsRef.current.onError?.(message),
+      });
+    } };
+    const observer = new MutationObserver(records => {
+      // CodeMirror paints its own DOM and updates only its canonical raw code.
+      // Neither mutation needs the document-wide decoration pass while typing.
+      if (records.every(record => {
+        const element = record.target instanceof Element ? record.target : record.target.parentElement;
+        return element?.closest('.note-code-editable .note-code-preview,.note-code-editable > pre.vditor-ir__marker--pre');
+      })) return;
+      cancelAnimationFrame(frame); frame = requestAnimationFrame(enhance);
+    });
     const themeObserver = new MutationObserver(() => refreshEditorDiagrams(root));
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme'] });
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
@@ -315,7 +346,12 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       after: () => {
         clearTimeout(timeout);
         if (disposed) { instance.destroy(); return; }
-        editorRef.current = instance; instance.setValue(buffer.current.value); buffer.current.baseline(snapshotMarkdown(instance));
+        editorRef.current = instance;
+        restoreUndo = installCodeUndoBridge(instance.vditor, () => {
+          if (disposed) return;
+          enhanceEditor(mount, propsRef.current.documentId, undefined, true); collect();
+        });
+        instance.setValue(buffer.current.value); buffer.current.baseline(snapshotMarkdown(instance));
         const field = instance.vditor.ir!.element;
         field.setAttribute('role', 'textbox'); field.setAttribute('aria-label', 'Markdown 正文'); field.setAttribute('aria-multiline', 'true'); field.setAttribute('spellcheck', 'false');
         setReady(true); getHeadings(); enhance();
@@ -325,6 +361,7 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       rememberSelection();
     };
     const beforeInput = (event: InputEvent) => {
+      if (!(event.target as HTMLElement).closest('.cm-editor') && !/^history(?:Undo|Redo)$/.test(event.inputType)) commitCodeHistory();
       if (event.data === '/' && !event.isComposing && event.inputType === 'insertText' && canOpenSlash()) { event.preventDefault(); event.stopPropagation(); openSlash(); }
     };
     const languageChange = (event: Event) => { if (event.target instanceof HTMLSelectElement && event.target.matches('[data-code-language]')) { event.stopPropagation(); changeCodeLanguage(event.target); } };
@@ -334,8 +371,11 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     root.addEventListener('beforeinput', beforeInput);
     document.addEventListener('selectionchange', selectionChange);
     return () => {
+      clearTimeout(codeCollectTimer.current);
       disposed = true; alive.current = false; clearTimeout(timeout); cancelAnimationFrame(frame); observer.disconnect(); themeObserver.disconnect();
       document.removeEventListener('selectionchange', selectionChange); root.removeEventListener('beforeinput', beforeInput); root.removeEventListener('change', languageChange, true); root.removeEventListener('input', codeControlInput, true);
+      disposeEditorCodeBlocks(mount);
+      restoreUndo?.();
       if (editorRef.current === instance) { clearTimeout(instance.vditor.ir?.processTimeoutId); clearTimeout(instance.vditor.ir?.hlToolbarTimeoutId); instance.destroy(); editorRef.current = null; }
     };
   }, []);
@@ -347,6 +387,8 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
   }, [props.markdown]);
   useEffect(() => {
     setSlash(null); setLinkDialog(null); setTableOpen(false); setFlow(null);
+  }, [props.mode]);
+  useEffect(() => {
     if (props.mode !== 'read' || !readingRef.current) return;
     const page = document.createElement('div'); page.className = 'vditor-reset note-reading-content'; readingRef.current.replaceChildren(page);
     void renderReading(page, value, props.documentId).catch(error => { if (page.isConnected) propsRef.current.onError?.(`预览失败：${String(error)}`); });
@@ -358,18 +400,20 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
     if (!code || !info) return;
     code.className = select.value === 'plaintext' ? '' : `language-${select.value}`;
     info.textContent = '\u200b' + (select.value === 'plaintext' ? '' : select.value);
-    const editor = editorRef.current;
-    if (editor) editor.setValue(snapshotMarkdown(editor));
     enhanceEditor(mountRef.current!, propsRef.current.documentId); collect();
   }
 
   return <div ref={rootRef} className={`markdown-editor mode-${props.mode}`} data-theme={props.theme || 'light'} data-document-id={props.documentId}
-    onCompositionStartCapture={() => { composing.current = true; }}
-    onCompositionEndCapture={() => { composing.current = false; requestAnimationFrame(() => { if (alive.current && propsRef.current.mode === 'edit') collect(); }); }}
+    onCompositionStartCapture={event => { if (!(event.target as HTMLElement).closest('.cm-editor')) { commitCodeHistory(); composing.current = true; } }}
+    onCompositionEndCapture={event => { if ((event.target as HTMLElement).closest('.cm-editor')) return; composing.current = false; requestAnimationFrame(() => { if (alive.current && propsRef.current.mode === 'edit') collect(); }); }}
     onKeyDownCapture={event => {
-      if (event.nativeEvent.isComposing || composing.current || (event.target as HTMLElement).closest('.editor-slash-menu,.editor-link-dialog,.editor-tools,[role=dialog]')) return;
+      if (event.nativeEvent.isComposing || composing.current || (event.target as HTMLElement).closest('.editor-slash-menu,.editor-link-dialog,.editor-tools,.cm-editor,[role=dialog]')) return;
       const isEditor = mountRef.current?.contains(event.target as Node);
       if (!isEditor || propsRef.current.mode === 'read') return;
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) {
+        event.preventDefault(); event.stopPropagation(); executeCommand(event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo'); return;
+      }
+      if (['Backspace', 'Delete', 'Enter', 'Tab'].includes(event.key)) commitCodeHistory();
       const shortcut = EDITOR_SHORTCUTS.find(item => matchesEditorShortcut(event.nativeEvent, item.binding));
       if (shortcut) { event.preventDefault(); event.stopPropagation(); executeCommand(shortcut.id); }
       else if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && canOpenSlash()) { event.preventDefault(); event.stopPropagation(); openSlash(); }
@@ -380,28 +424,36 @@ export default function MarkdownEditor(props: MarkdownEditorProps) {
       if (fold) { event.preventDefault(); event.stopPropagation(); toggleCodeFold(fold, propsRef.current.documentId, propsRef.current.onError); return; }
       const editFlow = target.closest<HTMLButtonElement>('[data-edit-flow]');
       if (editFlow) { event.preventDefault(); event.stopPropagation(); openFlow(editFlow.closest('[data-type="code-block"]')); return; }
+      const format = target.closest<HTMLButtonElement>('[data-format-code]');
+      if (format && mountRef.current) { event.preventDefault(); event.stopPropagation(); formatEditorCodeBlock(format, mountRef.current); return; }
       const copy = target.closest<HTMLButtonElement>('[data-copy-code]');
       if (copy) {
         event.preventDefault(); event.stopPropagation();
-        const text = copy.closest('.note-codebox')?.querySelector('code')?.textContent || '';
+        const text = codeBlockText(copy);
         void navigator.clipboard.writeText(text).then(() => { if (copy.isConnected) { copy.dataset.copied = 'true'; copy.title = '已复制'; window.setTimeout(() => { if (copy.isConnected) { delete copy.dataset.copied; copy.title = '复制代码'; } }, 1400); } }).catch(() => propsRef.current.onError?.('复制失败'));
       } else if (target.closest('[data-code-language]')) event.stopPropagation();
     }}
     onPasteCapture={event => {
+      if ((event.target as HTMLElement).closest('.cm-editor')) return;
+      commitCodeHistory();
       const files = [...event.clipboardData.files].filter(file => file.type.startsWith('image/'));
       if (props.mode !== 'read' && files.length) { event.preventDefault(); event.stopPropagation(); rememberSelection(); void addImages(files); }
     }}
-    onDragOver={event => { if (props.mode !== 'read' && event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
+    onDragOver={event => { if (!(event.target as HTMLElement).closest('.cm-editor') && props.mode !== 'read' && event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
     onDropCapture={event => {
-      if (props.mode === 'read') return;
+      if (props.mode === 'read' || (event.target as HTMLElement).closest('.cm-editor')) return;
+      commitCodeHistory();
       const files = [...event.dataTransfer.files].filter(file => file.type.startsWith('image/'));
       if (files.length) { event.preventDefault(); event.stopPropagation(); rememberSelection(); void addImages(files); }
     }}>
     {props.mode === 'edit' ? <EditorToolbar onCommand={executeCommand} onStyle={styleSelection} rememberSelection={rememberSelection} /> : null}
     {props.documentTools}
-    <div className="editor-surface">
+    <div className="editor-body-flex">
+      {props.documentOutline}
+      <div className="editor-surface">
       <div ref={mountRef} className="markdown-visual" hidden={props.mode !== 'edit'} aria-busy={!ready} />
       <div ref={readingRef} className="markdown-reading" hidden={props.mode !== 'read'} onClick={event => { const id = (event.target as HTMLElement).closest<HTMLElement>('[data-target-id]')?.dataset.targetId; if (id) readingRef.current?.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} />
+      </div>
     </div>
     {tableOpen ? <TableDialog onInsert={markdown => { setTableOpen(false); insertText(markdown); }} onClose={() => { setTableOpen(false); restoreSelection(); }} /> : null}
     {flow ? <FlowDesigner source={flow.source} onSave={saveFlow} onClose={() => { setFlow(null); restoreSelection(); }} /> : null}

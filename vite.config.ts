@@ -4,6 +4,10 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  worker: { format: "es" },
+  resolve: { alias: [
+    { find: /^@scalar\/rust-fmt$/, replacement: new URL("./node_modules/@scalar/rust-fmt/dist/index.browser.js", import.meta.url).pathname },
+  ] },
   server: { host: "127.0.0.1", port: 1420, strictPort: true },
   build: { target: "es2020", chunkSizeWarningLimit: 800 },
 });
