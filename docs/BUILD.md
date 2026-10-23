@@ -1,6 +1,6 @@
 # 构建记录
 
-TypePro 1.3.1（Android versionCode `1003001`）。本次本地构建沿用用户对本任务的 DMG／APK 与必要依赖安装授权。旧版本检查保留为历史记录，本次检查在文末单列。
+当前源码 TypePro 1.3.2（Android versionCode `1003002`）。1.3.2 仅交付修复桌面图标的 Android APK；Mac 继续使用 1.3.1。沿用用户对本任务的 DMG／APK 与必要依赖安装授权，历史检查保留在文末。
 
 | 工具 | 版本 |
 | --- | --- |
@@ -50,7 +50,7 @@ NOTEBOOK_KEY_ALIAS
 NOTEBOOK_KEY_PASSWORD
 ```
 
-alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.3.1 的 Android versionCode 明确配置为 `1003001`，高于 1.3.0 的 `1003000`；CLI 构建时重新生成 `tauri.properties`。
+alias 为 `notebook`。沿用 1.0.0 的相同密钥与包名 `com.localnotes.notebook`，可以覆盖升级并保留应用私有数据。1.3.2 的 Android versionCode 明确配置为 `1003002`，高于 1.3.1 的 `1003001`；CLI 构建时重新生成 `tauri.properties`。
 
 ```sh
 npm run tauri -- android build --apk --target aarch64 armv7 --ci
@@ -59,6 +59,12 @@ npm run tauri -- android build --apk --target aarch64 armv7 --ci
 APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`。本次为个人 release 签名，包含 ARM64 和 ARMv7，minSdk 26、targetSdk 36。ARM64 原生库使用 16KB 页面对齐。
 
 保留随源码交付的 Android 工程与自定义 Kotlin 文件，不要再次执行 `android init`。首次构建时 CLI 会生成 `tauri.settings.gradle`、`tauri.build.gradle.kts`、平台资源和本机路径；这些生成文件与构建缓存不在源码压缩包内。
+
+### Android 桌面图标
+
+已确认的图标源为 `src-tauri/icons/icon.png`，App 内 Logo 为 `public/typepro-logo.png`。Android 不直接使用这两个文件，而是使用独立的 mipmap 资源。修改图标时，用 Tauri 自带的 `icon` 命令从图标源生成临时资源，将生成的 `android/mipmap-*/` 中的 PNG 同时更新到 `src-tauri/icons/android/` 和 `src-tauri/gen/android/app/src/main/res/` 对应目录；不要覆盖自定义原生工程。所有五种密度的普通、圆形及自适应前景均需更新。
+
+Manifest 的 `@mipmap/ic_launcher` 在 Android 8 及以上通过 `mipmap-anydpi-v26/ic_launcher.xml` 引用 `@mipmap/ic_launcher_foreground`，背景为白色。交付前应核对 APK 内实际打包的资源，不能只检查 App 内 Logo 或 Mac 的 `.icns`。
 
 ## 检查安装包
 
@@ -179,3 +185,13 @@ hdiutil verify TypePro-1.3.1-mac-arm64.dmg
 | --- | ---: | --- |
 | TypePro-1.3.1-mac-arm64.dmg | 13,336,846 | `447b3629ccbeb6fb1371a5e8bd9529e61be4927355a923918cedd3087029bc0b` |
 | TypePro-1.3.1-android.apk | 33,583,605 | `3441f49a3ef003e6cad015b6ad5e9d27f258d069f3bc67098a2fc220f6d824de` |
+
+
+## 1.3.2 Android 桌面图标修复（2026-10-22）
+
+- 根因：App 内 Logo 与 Mac 图标已使用新版，但 Android 独立 mipmap 资源仍为旧蓝色笔记本图标。更新两份 Android 资源目录中五种密度的普通、圆形和自适应前景 PNG；Manifest 与权限完全不变。
+- 从已确认的 `src-tauri/icons/icon.png` 使用现有 Tauri 图标生成器生成尺寸资源，没有重新设计 Logo；两个资源目录逐文件一致。
+- APK 中五种密度的普通图标和五种自适应前景图像逐像素等于新版资源，全部与旧图标不同；实际提取 xxxhdpi 前景并查看确认。核对 Manifest 指向自适应图标，后者指向新版前景。未引用的圆形 PNG 由现有资源缩减机制移除，系统圆形遮罩仍使用同一自适应图标。
+- 1.3.2／1003002，包名 `com.localnotes.notebook`，minSdk 26、targetSdk 36，ARM64＋ARMv7；签名校验通过且证书与 1.3.1 相同，ZIP 16KB 和 ARM64 ELF LOAD 段对齐通过。APK 字节数 33,836,361，SHA-256 `69db7298e785e9a34b4f312e6b8a0d3af26dc534c678710f886e6675be7ad1ba`。
+- 生产构建包含 TypeScript 检查，`git diff --check` 通过。Ponytail review 仅审查本次资源、版本和文档差异：Lean already. Ship. 没有新增运行依赖或业务逻辑。
+- 边界：本次只交付 Android APK，Mac 继续使用 1.3.1。未新建模拟器验收会话、未操作物理手机、未重复 GitHub 同步或导入导出流程；1.3.1 的 Android 附件存储修复及其验证记录保持有效。

@@ -5,6 +5,12 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.3.2",
+    changes: [
+      "修复 Android 桌面仍显示旧图标的问题，统一使用已确认的黑白文档与笔 Logo。",
+    ],
+  },
+  {
     version: "1.3.1",
     changes: [
       "修复 Android 同步图片或封面时出现 Permission denied (os error 13) 的问题。",
