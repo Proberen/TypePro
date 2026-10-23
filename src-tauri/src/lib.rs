@@ -1,5 +1,7 @@
 mod github;
 mod app_updates;
+mod app_downloads;
+mod app_installer;
 mod github_secrets;
 mod plugin_market;
 mod storage;
@@ -18,6 +20,7 @@ struct Store(Mutex<Storage>);
 struct GithubService(Result<Github, String>);
 struct PluginMarketService(Result<plugin_market::Market, String>);
 struct AppUpdateService(Result<app_updates::Updater, String>);
+struct AppDownloadService(Result<std::sync::Arc<app_downloads::Downloads>, String>);
 impl GithubService {
     fn get(&self) -> Response<&Github> {
         self.0.as_ref().map_err(Clone::clone)
@@ -292,6 +295,44 @@ async fn app_check_updates(
     }
     updater.0.as_ref().map_err(Clone::clone)?.check().await
 }
+#[tauri::command]
+async fn app_download_update(
+    window: WebviewWindow,
+    downloads: State<'_, AppDownloadService>,
+    version: String,
+) -> Response<app_downloads::DownloadState> {
+    check_update_window(&window)?;
+    downloads.0.as_ref().map_err(Clone::clone)?.start(version)
+}
+#[tauri::command]
+async fn app_update_download_status(
+    window: WebviewWindow,
+    downloads: State<'_, AppDownloadService>,
+) -> Response<app_downloads::DownloadState> {
+    check_update_window(&window)?;
+    downloads.0.as_ref().map_err(Clone::clone)?.status()
+}
+#[tauri::command]
+async fn app_cancel_update_download(
+    window: WebviewWindow,
+    downloads: State<'_, AppDownloadService>,
+) -> Response<app_downloads::DownloadState> {
+    check_update_window(&window)?;
+    downloads.0.as_ref().map_err(Clone::clone)?.cancel()
+}
+#[tauri::command]
+async fn app_open_update_installer(
+    app: AppHandle,
+    window: WebviewWindow,
+    downloads: State<'_, AppDownloadService>,
+) -> Response<()> {
+    check_update_window(&window)?;
+    downloads.0.as_ref().map_err(Clone::clone)?.open(&app).await
+}
+fn check_update_window(window: &WebviewWindow) -> Response<()> {
+    if window.label() != "main" { return Err("窗口无权管理应用更新".into()); }
+    Ok(())
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -299,6 +340,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(transfer::init())
+        .plugin(app_installer::init())
         .plugin(github_secrets::init())
         .plugin(plugin_secrets::init())
         .manage(plugin_services::PluginServices::new())
@@ -307,6 +349,10 @@ pub fn run() {
             app.manage(GithubService(Github::new(data.join("github-sync"))));
             app.manage(PluginMarketService(plugin_market::Market::new()));
             app.manage(AppUpdateService(app_updates::Updater::new()));
+            let downloads = app.path().app_cache_dir().map_err(|error| error.to_string())
+                .and_then(|path| app_downloads::Downloads::new(path.join("updates")))
+                .map(std::sync::Arc::new);
+            app.manage(AppDownloadService(downloads));
             let root = data.join("workspace");
             std::fs::create_dir_all(&root)?;
             app.manage(Store(Mutex::new(Storage::new(root))));
@@ -314,6 +360,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_check_updates,
+            app_download_update,
+            app_update_download_status,
+            app_cancel_update_download,
+            app_open_update_installer,
             plugin_market_catalog,
             plugin_market_download,
             plugin_market_restore,

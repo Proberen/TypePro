@@ -1,4 +1,4 @@
-use reqwest::{header, Client, StatusCode};
+use reqwest::{header, Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 
@@ -7,6 +7,8 @@ const RELEASES_URL: &str = "https://api.github.com/repos/Proberen/TypePro/releas
 const RELEASES_PER_PAGE: usize = 100;
 const MAX_PAGES: usize = 5;
 const MAX_RESPONSE: usize = 4 * 1024 * 1024;
+const MAX_CHECKSUMS: usize = 64 * 1024;
+pub const MAX_INSTALLER_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +46,16 @@ struct Asset {
     state: String,
     size: u64,
     browser_download_url: String,
+    #[serde(default)]
+    digest: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DownloadAsset {
+    pub filename: String,
+    pub url: String,
+    pub size: u64,
+    pub sha256: String,
 }
 
 pub struct Updater {
@@ -71,6 +83,88 @@ impl Updater {
             .build()
             .map_err(|_| "无法初始化更新检查连接")?;
         Ok(Self { client })
+    }
+
+    /// Resolve the user-selected version again; no caller-supplied URL or checksum is trusted.
+    pub async fn resolve_download(&self, version: &str) -> Result<DownloadAsset> {
+        let platform = current_platform().ok_or("当前设备暂不支持下载更新")?;
+        self.resolve_download_for(version, env!("CARGO_PKG_VERSION"), platform).await
+    }
+
+    async fn resolve_download_for(&self, version: &str, current: &str, platform: &str) -> Result<DownloadAsset> {
+        valid_upgrade_to(version, current)?;
+        let response = self.client.get(format!("{RELEASES_URL}/tags/v{version}"))
+            .header(header::ACCEPT, "application/vnd.github+json")
+            .header(header::CACHE_CONTROL, "no-cache")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send().await.map_err(connection_error)?;
+        if !response.status().is_success() {
+            return Err("无法读取此版本，请重新检查更新后重试".into());
+        }
+        let release: Release = serde_json::from_slice(&read_limited(response).await?)
+            .map_err(|_| "GitHub 更新信息格式不正确")?;
+        let update = select_update(std::slice::from_ref(&release), current, platform)?
+            .filter(|update| update.version == version)
+            .ok_or("此版本没有可用的安装包，请重新检查更新")?;
+        let asset = release.assets.iter().find(|asset| asset.browser_download_url == update.download_url)
+            .ok_or("安装包信息不完整")?;
+        if asset.size > MAX_INSTALLER_BYTES {
+            return Err("安装包超过 512 MB 限制".into());
+        }
+        let sha256 = match asset.digest.as_deref() {
+            Some(digest) => parse_digest(digest).ok_or("安装包 SHA-256 信息无效")?,
+            None => {
+                let url = format!("https://github.com/Proberen/TypePro/releases/download/v{version}/SHA256SUMS.txt");
+                let checksums = release.assets.iter().find(|entry| entry.name == "SHA256SUMS.txt"
+                    && entry.browser_download_url == url && entry.state == "uploaded"
+                    && entry.size > 0 && entry.size <= MAX_CHECKSUMS as u64)
+                    .ok_or("此版本缺少完整性校验信息，暂时不能下载")?;
+                let response = self.asset_response(&checksums.browser_download_url).await?;
+                let bytes = read_bounded(response, MAX_CHECKSUMS).await?;
+                if bytes.len() as u64 != checksums.size {
+                    return Err("版本校验文件不完整，请重试".into());
+                }
+                parse_checksums(&bytes, &asset.name)?
+            }
+        };
+        Ok(DownloadAsset { filename: asset.name.clone(),
+            url: update.download_url, size: asset.size, sha256 })
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn published_download_for_test(&self, version: &str, platform: &str) -> Result<DownloadAsset> {
+        self.resolve_download_for(version, "1.7.3", platform).await
+    }
+
+    pub async fn open_download(&self, asset: &DownloadAsset) -> Result<reqwest::Response> {
+        self.asset_response(&asset.url).await
+    }
+
+    async fn asset_response(&self, value: &str) -> Result<reqwest::Response> {
+        let mut url = Url::parse(value).map_err(|_| "安装包下载地址无效")?;
+        for redirects in 0..=3 {
+            let response = self.client.get(url.clone())
+                .header(header::ACCEPT, "application/octet-stream")
+                .timeout(Duration::from_secs(15 * 60))
+                .send().await.map_err(download_error)?;
+            if response.status().is_redirection() {
+                if redirects == 3 { return Err("安装包下载跳转过多".into()); }
+                let location = response.headers().get(header::LOCATION)
+                    .and_then(|value| value.to_str().ok()).filter(|value| value.len() <= 8192)
+                    .ok_or("安装包下载跳转地址无效")?;
+                let target = url.join(location).map_err(|_| "安装包下载跳转地址无效")?;
+                if !allowed_download_redirect(&target) {
+                    return Err("安装包下载跳转到了不受支持的地址".into());
+                }
+                url = target;
+                continue;
+            }
+            if response.status() != StatusCode::OK {
+                return Err("安装包下载失败，请稍后重试".into());
+            }
+            return Ok(response);
+        }
+        Err("安装包下载失败".into())
     }
 
     pub async fn check(&self) -> Result<UpdateCheck> {
@@ -123,7 +217,7 @@ fn current_platform() -> Option<&'static str> {
     }
 }
 
-fn version_parts(version: &str) -> Option<[u64; 3]> {
+pub(crate) fn version_parts(version: &str) -> Option<[u64; 3]> {
     fn number(part: &str) -> Option<u64> {
         if part.is_empty() || part.len() > 1 && part.starts_with('0')
             || !part.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -169,18 +263,72 @@ fn select_update(releases: &[Release], current_version: &str, platform: &str) ->
     }))
 }
 
-async fn read_limited(mut response: reqwest::Response) -> Result<Vec<u8>> {
-    if response.content_length().is_some_and(|length| length > MAX_RESPONSE as u64) {
+async fn read_limited(response: reqwest::Response) -> Result<Vec<u8>> {
+    read_bounded(response, MAX_RESPONSE).await
+}
+
+async fn read_bounded(mut response: reqwest::Response, maximum: usize) -> Result<Vec<u8>> {
+    if response.content_length().is_some_and(|length| length > maximum as u64) {
         return Err("GitHub 更新信息过大，请在版本页面查看".into());
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(connection_error)? {
-        if chunk.len() > MAX_RESPONSE - bytes.len() {
+        if chunk.len() > maximum - bytes.len() {
             return Err("GitHub 更新信息过大，请在版本页面查看".into());
         }
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+pub(crate) fn valid_upgrade_version(version: &str) -> Result<()> {
+    valid_upgrade_to(version, env!("CARGO_PKG_VERSION"))
+}
+
+fn valid_upgrade_to(version: &str, current: &str) -> Result<()> {
+    let requested = version_parts(version).ok_or("更新版本号无效")?;
+    let current = version_parts(current).ok_or("当前版本号无效")?;
+    if requested <= current { return Err("只能下载高于当前版本的更新".into()); }
+    Ok(())
+}
+
+fn parse_digest(value: &str) -> Option<String> {
+    let hash = value.strip_prefix("sha256:")?;
+    valid_hash(hash).then(|| hash.to_ascii_lowercase())
+}
+
+fn valid_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn parse_checksums(bytes: &[u8], filename: &str) -> Result<String> {
+    let text = std::str::from_utf8(bytes).map_err(|_| "版本校验文件格式不正确")?;
+    let mut found = None;
+    for line in text.lines() {
+        // GNU sha256sum text and binary markers are the only accepted formats.
+        if line.len() < 67 || !line.is_char_boundary(64) { continue; }
+        let (hash, rest) = line.split_at(64);
+        if let Some(name) = rest.strip_prefix("  ").or_else(|| rest.strip_prefix(" *")) {
+            if name == filename {
+                if !valid_hash(hash) || found.is_some() {
+                    return Err("安装包校验记录无效或重复".into());
+                }
+                found = Some(hash.to_ascii_lowercase());
+            }
+        }
+    }
+    found.ok_or_else(|| "校验文件中缺少当前安装包".into())
+}
+
+fn allowed_download_redirect(url: &Url) -> bool {
+    url.scheme() == "https" && url.username().is_empty() && url.password().is_none()
+        && url.port_or_known_default() == Some(443) && url.fragment().is_none()
+        && matches!(url.host_str(), Some("github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com"))
+}
+
+pub(crate) fn download_error(error: reqwest::Error) -> String {
+    if error.is_timeout() { "安装包下载超时，请重试".into() }
+    else { "无法下载更新，请检查网络后重试".into() }
 }
 
 fn connection_error(error: reqwest::Error) -> String {
@@ -206,7 +354,40 @@ mod tests {
             body: Some("## 更新说明\n保留 Markdown 文本".into()),
             published_at: Some("2026-10-23T03:00:00Z".into()),
             assets: vec![Asset { name: filename.clone(), state: "uploaded".into(), size: 123,
-                browser_download_url: format!("https://github.com/Proberen/TypePro/releases/download/v{version}/{filename}") }],
+                browser_download_url: format!("https://github.com/Proberen/TypePro/releases/download/v{version}/{filename}"), digest: None }],
+        }
+    }
+
+    #[test]
+    fn installer_hashes_accept_only_explicit_sha256_digests() {
+        let hash = "AB".repeat(32);
+        assert_eq!(parse_digest(&format!("sha256:{hash}")), Some(hash.to_ascii_lowercase()));
+        for value in [hash, "sha1:abcd".into(), format!("sha256:{}", "z".repeat(64)), "sha256:ab".into()] {
+            assert!(parse_digest(&value).is_none());
+        }
+    }
+
+    #[test]
+    fn checksum_fallback_requires_one_exact_installer_name() {
+        let hash = "ab".repeat(32);
+        let filename = "TypePro-9.0.0-android.apk";
+        for marker in ["  ", " *"] {
+            assert_eq!(parse_checksums(format!("{hash}{marker}{filename}\n").as_bytes(), filename).unwrap(), hash);
+        }
+        for text in [format!("{hash}  ../{filename}\n"), format!("{hash}  {filename}.other\n"),
+            format!("{hash}  {filename}\n{hash}  {filename}\n"), format!("{}  {filename}\n", "z".repeat(64))] {
+            assert!(parse_checksums(text.as_bytes(), filename).is_err());
+        }
+        assert!(parse_checksums(&[0xff], filename).is_err());
+    }
+
+    #[test]
+    fn installer_redirects_stay_on_explicit_github_https_hosts() {
+        for url in ["https://github.com/path", "https://release-assets.githubusercontent.com/path?token=public", "https://objects.githubusercontent.com/path"] {
+            assert!(allowed_download_redirect(&Url::parse(url).unwrap()));
+        }
+        for url in ["http://github.com/path", "https://github.com.evil.example/path", "https://evil.example/path", "https://github.com:444/path", "https://user@github.com/path", "https://github.com/path#fragment"] {
+            assert!(!allowed_download_redirect(&Url::parse(url).unwrap()));
         }
     }
 

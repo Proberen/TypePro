@@ -18,10 +18,26 @@ export interface AppUpdateState extends UpdateCheck {
   error: string;
 }
 
+export interface UpdateDownloadState {
+  version: string | null;
+  status: "idle" | "downloading" | "verifying" | "ready" | "cancelling" | "cancelled" | "error";
+  downloaded: number;
+  total: number;
+  error: string | null;
+  revision: number;
+}
+
+export type UpdateDownloadAction = "starting" | "cancelling" | "opening" | null;
+
 export interface AppUpdatesController {
   state: AppUpdateState;
+  downloadState: UpdateDownloadState;
+  downloadAction: UpdateDownloadAction;
+  downloadError: string;
   visible: boolean;
   check: () => Promise<void>;
   dismiss: () => void;
   download: () => Promise<void>;
+  cancelDownload: () => Promise<void>;
+  openInstaller: () => Promise<void>;
 }

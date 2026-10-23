@@ -12,3 +12,16 @@ export function trustedDownloadUrl(update, platform) {
   return update.releaseUrl === `${root}/tag/v${update.version}` &&
     update.downloadUrl === `${root}/download/v${update.version}/TypePro-${update.version}-${suffix}`;
 }
+
+export function downloadIsActive(status) {
+  return status === "downloading" || status === "verifying" || status === "cancelling";
+}
+
+export function newerDownloadState(current, next) {
+  return next.revision > current.revision ? next : current;
+}
+
+export function canOpenInstaller(download, update) {
+  return download.status === "ready" && download.version !== null &&
+    (update === null || download.version === update.version);
+}

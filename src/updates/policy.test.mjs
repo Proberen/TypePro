@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldCheck, trustedDownloadUrl, UPDATE_INTERVAL_MS } from "./policy.js";
+import { canOpenInstaller, downloadIsActive, newerDownloadState, shouldCheck, trustedDownloadUrl, UPDATE_INTERVAL_MS } from "./policy.js";
 
 test("startup waits until the application is visible", () => {
   assert.equal(shouldCheck(null, 100, "hidden"), false);
@@ -43,4 +43,30 @@ test("foreign repositories, queries and mismatched release tags cannot be opened
 
 test("missing updates have no download action", () => {
   assert.equal(trustedDownloadUrl(null, "mac-arm64"), false);
+});
+
+test("a delayed progress response cannot replace cancellation or a newer download", () => {
+  const oldProgress = { version: "1.7.5", status: "downloading", revision: 2 };
+  const cancelled = { ...oldProgress, status: "cancelled", revision: 4 };
+  const nextDownload = { version: "1.7.6", status: "downloading", revision: 5 };
+  assert.equal(newerDownloadState(cancelled, oldProgress), cancelled);
+  assert.equal(newerDownloadState(nextDownload, cancelled), nextDownload);
+  assert.equal(newerDownloadState(oldProgress, cancelled), cancelled);
+  assert.equal(newerDownloadState(cancelled, { ...cancelled }), cancelled);
+});
+
+test("downloads, verification and cancellation block new starts until the native task stops", () => {
+  for (const status of ["downloading", "verifying", "cancelling"]) assert.equal(downloadIsActive(status), true);
+  for (const status of ["idle", "ready", "cancelled", "error"]) assert.equal(downloadIsActive(status), false);
+});
+
+test("installing a cached package never installs the wrong version for a newly detected update", () => {
+  const ready = { version: "1.7.5", status: "ready" };
+  assert.equal(canOpenInstaller(ready, { version: "1.7.5" }), true);
+  assert.equal(canOpenInstaller(ready, { version: "1.7.6" }), false);
+  assert.equal(canOpenInstaller(ready, null), true);
+  assert.equal(canOpenInstaller({ ...ready, version: null }, null), false);
+  for (const status of ["downloading", "verifying", "cancelling", "cancelled", "error", "idle"]) {
+    assert.equal(canOpenInstaller({ ...ready, status }, { version: ready.version }), false);
+  }
 });

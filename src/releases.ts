@@ -5,6 +5,14 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.7.5",
+    changes: [
+      "更新安装包改为应用内下载，显示进度和大小，支持取消与失败重试。",
+      "下载后核对大小和 SHA-256，打开安装包前再次校验，异常文件不可安装。",
+      "Mac 直接打开已下载的 DMG；Android 进入系统安装确认，首次按需授予本来源安装权限。",
+    ],
+  },
+  {
     version: "1.7.4",
     changes: [
       "列表首项、单独一项也支持 Tab 原行缩进，Shift+Tab 逐级还原，保存重开保留独立缩进。",
