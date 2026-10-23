@@ -4,6 +4,21 @@
 
 用户于 2026-10-23 明确要求：TypePro 每次代码落地默认包含必要验收、Apple Silicon DMG 与 Android APK 打包、源码和安装包发布至本仓库 Releases，无需逐次重复确认构建。该约定仅适用于 TypePro；插件仍独立发布。发布后逐项核对公开下载文件的大小与 SHA-256，再清理已上传的本地安装包、源码 ZIP 与应用构建缓存，保留源码、原型、验收记录、签名备份、密钥及 NAS 镜像。
 
+## 1.7.6 C2 图标（2026-10-23）
+
+- 用户确认采用 C2 紫色机器人。App 内 Logo 保存原始 1536×1536 图像，SHA-256 为 `705fd471ace9a5a09929fcdd9dc9df0228cd74608204f233d068e916c3427e49`。NAS 网页沿用 128×128 尺寸。
+- 使用既有 Tauri `icon` 资源转换能力更新原生图标，两份 Android 五密度 PNG 保持一致。自适应背景采用原图左上角的 `#B8D9EF`，避免原白底露边。未改包名、签名、笔记存储、同步或插件接口。
+- 版本为 1.7.6／Android `1007006`。前端类型检查与生产构建、Mac 和 Android release 构建通过；两端共用冻结的 140 份前端资源。Mac 签名可执行文件中的 138 份非 HTML 资源解压后逐字节一致，包含 C2 原图；HTML 的当前 JS／CSS 入口也已核对。
+- Mac：arm64、包名不变，严格 codesign 与 DMG 校验通过；只读挂载后核对应用、C2 `icon.icns` 与 Applications 链接。ad-hoc 签名，未公证。
+- Android：ARM64＋ARMv7、minSdk26／targetSdk36；实际 APK 的 10 张普通与自适应前景 PNG 逐像素等于新资源，均不同于上一版。Manifest、自适应图标和浅蓝背景引用核对通过。CRC、ZIP 16 KiB 和 ARM64 ELF LOAD 对齐、原生库载荷核对通过，签名证书与 1.7.5 相同。
+- 本轮按 Ponytail `ponytail-review` 审查图标、版本元数据与文档差异：`Lean already. Ship.`，没有增加运行依赖或业务逻辑。
+- 证据位于 `work/typepro-logo-review/`。本次核对源码与最终安装包资源，没有启动用户正式应用、替换已安装应用或验证真实桌面图标缓存刷新；没有重复笔记编辑、同步或物理安卓设备验收。
+
+| 产物 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| TypePro-1.7.6-mac-arm64.dmg | 13260444 | `7c6acca675cf8e50f1f5e1d965d952d225ef5018980456bd027e2394d63ae8df` |
+| TypePro-1.7.6-android.apk | 34541913 | `81a7262c2a861260b4feaa4db8c04085604fee2fdbd1f1aa26de50aa51f2e077` |
+
 ## 1.7.5 应用内下载与系统安装入口（2026-10-23）
 
 版本为 1.7.5／Android `1007005`。更新下载由应用原生任务处理；笔记、GitHub 同步和插件 API 格式不变，未新增依赖或发布插件。1.7.4 及更早版本需先通过原有浏览器入口安装本版，后续更新才使用应用内下载。
@@ -218,7 +233,7 @@ npm run tauri -- android build --apk --target aarch64 armv7 --ci
 
 已确认的图标源为 `src-tauri/icons/icon.png`，App 内 Logo 为 `public/typepro-logo.png`。Android 不直接使用这两个文件，而是使用独立的 mipmap 资源。修改图标时，用 Tauri 自带的 `icon` 命令从图标源生成临时资源，将生成的 `android/mipmap-*/` 中的 PNG 同时更新到 `src-tauri/icons/android/` 和 `src-tauri/gen/android/app/src/main/res/` 对应目录；不要覆盖自定义原生工程。所有五种密度的普通、圆形及自适应前景均需更新。
 
-Manifest 的 `@mipmap/ic_launcher` 在 Android 8 及以上通过 `mipmap-anydpi-v26/ic_launcher.xml` 引用 `@mipmap/ic_launcher_foreground`，背景为白色。交付前应核对 APK 内实际打包的资源，不能只检查 App 内 Logo 或 Mac 的 `.icns`。
+Manifest 的 `@mipmap/ic_launcher` 在 Android 8 及以上通过 `mipmap-anydpi-v26/ic_launcher.xml` 引用 `@mipmap/ic_launcher_foreground`，背景使用所选图像的背景色（C2 为 `#B8D9EF`）。交付前应核对 APK 内实际打包的资源，不能只检查 App 内 Logo 或 Mac 的 `.icns`。
 
 ## 检查安装包
 

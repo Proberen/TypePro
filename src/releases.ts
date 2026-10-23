@@ -5,6 +5,13 @@ export interface Release {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "1.7.6",
+    changes: [
+      "采用全新浅蓝背景、紫色机器人 Logo，统一应用首页、侧栏、启动页与关于页面。",
+      "同步更新 Mac 和安卓桌面图标；安卓自适应图标覆盖全部密度资源。",
+    ],
+  },
+  {
     version: "1.7.5",
     changes: [
       "更新安装包改为应用内下载，显示进度和大小，支持取消与失败重试。",
